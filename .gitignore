@@ -1,0 +1,52 @@
+# ==========================================
+# Byte-compiled / optimized / DLL files
+# ==========================================
+__pycache__/
+*.py[cod]
+*$py.class
+*.pyd
+
+# C / C++ build outputs
+build/
+bin/
+*.exe
+*.o
+*.obj
+*.lib
+*.a
+!cpp_engine/third_party/onnxruntime/lib/*.a
+*.pdb
+*.ilk
+*.exp
+
+# Large Model Weights (> 100MB, generate via scripts/export_onnx.py)
+*.onnx.data
+models/*.data
+models/*.bin
+
+# Virtual Environments
+.venv/
+venv/
+ENV/
+env/
+
+# IDE & Editor configs
+.vscode/
+.idea/
+*.suo
+*.user
+*.userosscache
+*.sln.docstates
+imgui.ini
+*.swp
+*.swo
+
+# Logs & Diagnostics
+*.log
+run_log.txt
+scratch/
+
+# OS generated files
+.DS_Store
+Thumbs.db
+desktop.ini
