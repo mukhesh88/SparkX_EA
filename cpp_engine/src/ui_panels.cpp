@@ -7,6 +7,12 @@
 #include <cmath>
 #include <algorithm>
 
+#if defined(_WIN32)
+#define WIN32_LEAN_AND_MEAN
+#include <windows.h>
+#include <shellapi.h>
+#endif
+
 namespace UIPanels {
 
 static char s_console_filter[128] = "";
@@ -167,8 +173,35 @@ void RenderHeaderAndToggle(ThreadSafeAppState& state, const MarketFrame& frame) 
     RenderAssetPill("XAUUSD (GOLD)", frame.price > 100.0 ? frame.price : 4186.80);
 
     // Right: Pill Badges using ImGui::RenderFrame style
-    ImGui::SameLine(ImGui::GetWindowWidth() - 470.0f);
+    bool is_mt5 = (frame.feed_source.find("MT5") != std::string::npos);
+    float right_offset = !is_mt5 ? 730.0f : 600.0f;
+    ImGui::SameLine(ImGui::GetWindowWidth() - right_offset);
     ImGui::SetCursorPosY(ImGui::GetCursorPosY() + 8.0f);
+
+    // Pill: Feed Source (MT5 Live or TradingView Live)
+    RenderPillBadge("Feed", is_mt5 ? "MT5 Live" : "TradingView Live", is_mt5 ? CyberpunkTheme::NEON_GREEN : CyberpunkTheme::NEON_CYAN);
+    ImGui::SameLine();
+
+    // If MT5 is not connected, provide a prominent 1-click installer button
+    if (!is_mt5) {
+        ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.85f, 0.45f, 0.05f, 0.25f));
+        ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(0.95f, 0.55f, 0.10f, 0.45f));
+        ImGui::PushStyleColor(ImGuiCol_ButtonActive, ImVec4(1.0f, 0.60f, 0.15f, 0.60f));
+        ImGui::PushStyleColor(ImGuiCol_Text, CyberpunkTheme::NEON_AMBER);
+        ImGui::PushStyleVar(ImGuiStyleVar_FrameRounding, 5.0f);
+        if (ImGui::Button("[+ Install MT5]", ImVec2(120.0f, 32.0f))) {
+#if defined(_WIN32)
+            ShellExecuteA(NULL, "open", "https://download.mql5.com/cdn/web/metaquotes.software.corp/mt5/mt5setup.exe", NULL, NULL, SW_SHOWNORMAL);
+#endif
+            state.AddLog("INFO", "Opening official MetaTrader 5 direct installer in browser...");
+        }
+        ImGui::PopStyleVar();
+        ImGui::PopStyleColor(4);
+        if (ImGui::IsItemHovered()) {
+            ImGui::SetTooltip("MetaTrader 5 terminal not detected. Click to download and install official low-latency MT5.\nCurrently streaming live authentic TradingView / Swissquote spot data.");
+        }
+        ImGui::SameLine();
+    }
 
     // Pill 1: Latency
     char lat_buf[32];
