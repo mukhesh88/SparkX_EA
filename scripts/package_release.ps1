@@ -33,12 +33,17 @@ if (Test-Path (Join-Path $RootDir "models\laya.onnx.data")) {
 }
 Copy-Item (Join-Path $RootDir "models\tokenizer") -Destination $DestModels -Recurse
 
-# 4. Standalone Backend
+# 4. Configuration & Mobile Alerts
+$DestConfig = Join-Path $ReleaseDir "config"
+New-Item -ItemType Directory -Force -Path $DestConfig | Out-Null
+Copy-Item (Join-Path $RootDir "config\*") -Destination $DestConfig -Recurse
+
+# 5. Standalone Backend
 $DestBackend = Join-Path $ReleaseDir "dist\SparkX_Backend"
 New-Item -ItemType Directory -Force -Path $DestBackend | Out-Null
 Copy-Item (Join-Path $RootDir "dist\SparkX_Backend\*") -Destination $DestBackend -Recurse
 
-# 5. Instructions README
+# 6. Instructions README
 $ReadmeContent = @"
 ================================================================================
   SPARKX TERMINAL // ULTRA-LOW-LATENCY SMC DECISION ENGINE (LAYA-ONNX C++)
