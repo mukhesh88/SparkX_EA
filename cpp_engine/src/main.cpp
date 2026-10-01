@@ -100,11 +100,31 @@ static BackendHandle LaunchPythonBackend(const std::string& workspace_dir) {
 #if defined(_WIN32)
     namespace fs = std::filesystem;
     fs::path ws(workspace_dir);
-    fs::path venv_python = ws / ".venv" / "Scripts" / "python.exe";
-    std::string python_bin = fs::exists(venv_python) ? venv_python.string() : "python.exe";
-    fs::path script = ws / "python_node" / "publisher.py";
 
-    std::string cmd = "\"" + python_bin + "\" \"" + script.string() + "\" --interval 0.5";
+    // 1. Check for standalone compiled backend binary
+    std::vector<fs::path> backend_candidates = {
+        ws / "dist" / "SparkX_Backend" / "SparkX_Backend.exe",
+        ws / "SparkX_Backend.exe",
+        ws / "build" / "SparkX_Backend.exe",
+        ws / "SparkX_Backend" / "SparkX_Backend.exe"
+    };
+
+    std::string cmd;
+    for (const auto& candidate : backend_candidates) {
+        if (fs::exists(candidate)) {
+            cmd = "\"" + candidate.string() + "\" --interval 0.5";
+            std::cout << "[BackendManager] Found standalone backend binary: " << candidate.string() << std::endl;
+            break;
+        }
+    }
+
+    if (cmd.empty()) {
+        fs::path venv_python = ws / ".venv" / "Scripts" / "python.exe";
+        std::string python_bin = fs::exists(venv_python) ? venv_python.string() : "python.exe";
+        fs::path script = ws / "python_node" / "publisher.py";
+        cmd = "\"" + python_bin + "\" \"" + script.string() + "\" --interval 0.5";
+    }
+
     std::cout << "[BackendManager] Spawning backend: " << cmd << " (CWD: " << workspace_dir << ")" << std::endl;
 
     STARTUPINFOA si{};
