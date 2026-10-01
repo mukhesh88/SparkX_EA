@@ -6,7 +6,7 @@
     "chat_id": "YOUR_TELEGRAM_CHAT_ID"
   },
   "discord": {
-    "enabled": false,
-    "webhook_url": "YOUR_DISCORD_WEBHOOK_URL"
+    "enabled": true,
+    "webhook_url": "https://discord.com/api/webhooks/1555175799231881266/bkqKtxRVSnHN6Lbb9pD0r7vGOVCVu7m12fm-nd5YkIRzB-hx2MU8uPwnD1KYQ6kfZeLH"
   }
 }
