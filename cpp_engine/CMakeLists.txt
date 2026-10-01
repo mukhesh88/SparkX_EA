@@ -162,7 +162,7 @@ endif()
 if(WIN32)
     target_link_libraries(SparkX_Ai_Algo PRIVATE opengl32 gdi32 user32 shell32 ws2_32)
     if(MINGW)
-        target_link_options(SparkX_Ai_Algo PRIVATE -static-libgcc -static-libstdc++ -Wl,-Bstatic -lwinpthread -Wl,-Bdynamic)
+        target_link_options(SparkX_Ai_Algo PRIVATE -mwindows -static-libgcc -static-libstdc++ -Wl,-Bstatic -lwinpthread -Wl,-Bdynamic)
     endif()
 endif()
 
