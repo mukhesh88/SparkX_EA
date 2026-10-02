@@ -923,7 +923,9 @@ void RenderOpenPositionsTab(ThreadSafeAppState& state, const MarketFrame& frame)
         ImGui::TableSetupColumn("Action", ImGuiTableColumnFlags_WidthFixed, 80.0f);
         ImGui::TableHeadersRow();
 
+        int pos_row = 0;
         for (const auto& pos : positions) {
+            ImGui::PushID(pos.ticket > 0 ? (int)(pos.ticket & 0x7FFFFFFF) : ++pos_row);
             ImGui::TableNextRow();
 
             // 1. Ticket
@@ -971,7 +973,7 @@ void RenderOpenPositionsTab(ThreadSafeAppState& state, const MarketFrame& frame)
             // 11. Action Close Button
             ImGui::TableNextColumn();
             char btn_id[64];
-            std::snprintf(btn_id, sizeof(btn_id), "Close##%llu", (unsigned long long)pos.ticket);
+            std::snprintf(btn_id, sizeof(btn_id), "Close##pos_%llu", (unsigned long long)pos.ticket);
             ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.60f, 0.10f, 0.15f, 0.60f));
             ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(0.80f, 0.15f, 0.20f, 0.90f));
             if (ImGui::Button(btn_id, ImVec2(65.0f, 22.0f))) {
@@ -981,6 +983,8 @@ void RenderOpenPositionsTab(ThreadSafeAppState& state, const MarketFrame& frame)
                 state.AddLog("INFO", "Requested closure of position #" + std::to_string(pos.ticket));
             }
             ImGui::PopStyleColor(2);
+
+            ImGui::PopID();
         }
         ImGui::EndTable();
     }
@@ -1045,7 +1049,7 @@ void RenderTradeHistoryTab(ThreadSafeAppState& state) {
                                  ImGuiTableFlags_ScrollY | ImGuiTableFlags_SizingStretchProp;
     if (ImGui::BeginTable("HistoryTable", 10, table_flags)) {
         ImGui::TableSetupColumn("Ticket", ImGuiTableColumnFlags_WidthFixed, 90.0f);
-        ImGui::TableSetupColumn("Close Time", ImGuiTableColumnFlags_WidthFixed, 95.0f);
+        ImGui::TableSetupColumn("Time", ImGuiTableColumnFlags_WidthFixed, 80.0f);
         ImGui::TableSetupColumn("Symbol", ImGuiTableColumnFlags_WidthFixed, 85.0f);
         ImGui::TableSetupColumn("Action", ImGuiTableColumnFlags_WidthFixed, 75.0f);
         ImGui::TableSetupColumn("Lots", ImGuiTableColumnFlags_WidthFixed, 65.0f);
@@ -1056,7 +1060,9 @@ void RenderTradeHistoryTab(ThreadSafeAppState& state) {
         ImGui::TableSetupColumn("Strategy / Confluence", ImGuiTableColumnFlags_WidthStretch);
         ImGui::TableHeadersRow();
 
+        int hist_row = 0;
         for (const auto& item : history) {
+            ImGui::PushID(item.ticket > 0 ? (int)(item.ticket & 0x7FFFFFFF) : ++hist_row);
             ImGui::TableNextRow();
 
             // 1. Ticket
@@ -1100,12 +1106,16 @@ void RenderTradeHistoryTab(ThreadSafeAppState& state) {
             ImVec4 badge_txt = is_win ? CyberpunkTheme::NEON_GREEN : CyberpunkTheme::NEON_RED;
             ImGui::PushStyleColor(ImGuiCol_Button, badge_bg);
             ImGui::PushStyleColor(ImGuiCol_Text, badge_txt);
-            ImGui::SmallButton(is_win ? " WIN " : " LOSS ");
+            char badge_lbl[32];
+            std::snprintf(badge_lbl, sizeof(badge_lbl), "%s##outcome_%llu", is_win ? " WIN " : " LOSS ", (unsigned long long)item.ticket);
+            ImGui::SmallButton(badge_lbl);
             ImGui::PopStyleColor(2);
 
             // 10. Comment / Confluence
             ImGui::TableNextColumn();
             ImGui::TextColored(CyberpunkTheme::TEXT_MUTED, "%s", item.comment.c_str());
+
+            ImGui::PopID();
         }
         ImGui::EndTable();
     }

@@ -202,6 +202,7 @@ int main(int argc, char** argv) {
     ImGui::CreateContext();
     ImGuiIO& io = ImGui::GetIO(); (void)io;
     io.ConfigFlags |= ImGuiConfigFlags_NavEnableKeyboard;
+    io.ConfigDebugHighlightIdConflicts = false; // Disable debug programmer modal popups in production runtime
 
     // Load TrueType JetBrains Mono fonts at multiple sizes (14px, 17px, 24px, 12px)
     CyberpunkTheme::LoadFonts(io);
