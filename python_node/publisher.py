@@ -25,6 +25,7 @@ from src.compressor import MarketStateCompressor
 from src.antigravity_agent import MT5DataIngestionService
 from src.execution_gateway import MT5ExecutionGateway, ExecutionReceipt
 from src.mobile_notifier import mobile_notifier
+from src.trade_manager import trade_manager
 
 try:
     import MetaTrader5 as mt5
@@ -139,7 +140,7 @@ class ZMQMarketPublisher:
         self.gateway = MT5ExecutionGateway(self.config.risk, simulation_mode=False)
         self.last_trade_time = 0.0
         self.last_receipt: Optional[ExecutionReceipt] = None
-        self.auto_trade_enabled = True
+        self.last_price: Dict[str, float] = {}
 
         self.smc_engines = {
             sym: SMCEngine(sym, point_value=0.01 if "XAU" in sym else 1.0)
@@ -165,14 +166,74 @@ class ZMQMarketPublisher:
         symbol = cmd.get("symbol", "XAUUSD")
         action = cmd.get("action", "")
 
-        if cmd_type == "EXECUTE" or ("BUY" in action or "SELL" in action):
-            receipt = self.gateway.execute_live_order(
+        if cmd_type == "UPDATE_SETTINGS":
+            new_settings = cmd.get("settings", {})
+            if new_settings:
+                trade_manager.save_settings(new_settings)
+                logger.info(f"[SETTINGS APPLIED] New trading settings updated: {trade_manager.settings}")
+                self.tcp_broadcaster.broadcast({
+                    "event": "SETTINGS_UPDATED",
+                    "settings": trade_manager.settings
+                })
+        elif cmd_type == "CLOSE_TICKET":
+            ticket = int(cmd.get("ticket", 0))
+            if ticket > 0:
+                if self.ingestion.is_live:
+                    self.gateway.close_position_by_ticket(ticket)
+                cur_px = self.last_price.get(symbol, 4180.0)
+                trade_manager.close_simulated_position(ticket, cur_px)
+                logger.info(f"[CLOSE TICKET EXECUTED] Closed position #{ticket}")
+        elif cmd_type == "CLOSE_ALL":
+            if self.ingestion.is_live:
+                closed = self.gateway.close_all_positions(symbol=symbol)
+                logger.info(f"[CLOSE ALL EXECUTED] Closed MT5 tickets: {closed}")
+            cur_px = self.last_price.get(symbol, 4180.0)
+            while trade_manager.simulated_positions:
+                pos = trade_manager.simulated_positions[0]
+                trade_manager.close_simulated_position(pos["ticket"], cur_px)
+            logger.info("[CLOSE ALL EXECUTED] All positions cleared.")
+        elif cmd_type == "TEST_ALERT":
+            cur_px = self.last_price.get(symbol, 4185.0)
+            mobile_notifier.send_trade_signal(
                 symbol=symbol,
-                action=action,
-                sl_points=4.0,
-                tp_points=10.0,
-                comment="SparkX_GUI_Cmd"
+                action="MARKET_BUY",
+                price=cur_px,
+                sl=cur_px - 4.5,
+                tp=cur_px + 12.0,
+                score=9.5,
+                confidence=0.96,
+                reason="Verification Ping from SparkX Trade Settings Menu",
+                order_id=999999
             )
+            logger.info("[TEST ALERT] Dispatched verification ping to Discord/Telegram.")
+        elif cmd_type == "EXECUTE" or ("BUY" in action or "SELL" in action):
+            sl_pts = float(trade_manager.settings.get("sl_points", 4.5))
+            tp_pts = float(trade_manager.settings.get("tp_points", 12.0))
+            vol = float(trade_manager.settings.get("fixed_lot_size", 0.10))
+            cur_px = self.last_price.get(symbol, 4185.0)
+
+            if self.ingestion.is_live:
+                receipt = self.gateway.execute_live_order(
+                    symbol=symbol,
+                    action=action,
+                    sl_points=sl_pts,
+                    tp_points=tp_pts,
+                    lot_size=vol,
+                    comment="SparkX_GUI_Cmd"
+                )
+            else:
+                is_b = "BUY" in action.upper()
+                sl_p = round(cur_px - sl_pts if is_b else cur_px + sl_pts, 2)
+                tp_p = round(cur_px + tp_pts if is_b else cur_px - tp_pts, 2)
+                sim_ticket = trade_manager.add_simulated_position(
+                    symbol=symbol, action=action, price=cur_px, volume=vol, sl=sl_p, tp=tp_p, comment="SparkX_GUI_Cmd"
+                )
+                receipt = ExecutionReceipt(
+                    executed=True, order_id=sim_ticket, symbol=symbol, action=action,
+                    price=cur_px, volume=vol, sl=sl_p, tp=tp_p, retcode=10009,
+                    status_message="SUCCESS_SIMULATED_ORDER_FILLED", latency_ms=0.5
+                )
+
             self.last_receipt = receipt
             if receipt.executed:
                 self.last_trade_time = time.time()
@@ -188,9 +249,6 @@ class ZMQMarketPublisher:
                     reason=f"Manual Operator Command Triggered via C++ GUI ({action})",
                     order_id=receipt.order_id
                 )
-        elif cmd_type == "CLOSE_ALL":
-            closed = self.gateway.close_all_positions(symbol=symbol)
-            logger.info(f"[CLOSE ALL EXECUTED] Closed tickets: {closed}")
 
     def generate_and_publish_frame(self, symbol: str):
         t0 = time.perf_counter()
@@ -204,14 +262,16 @@ class ZMQMarketPublisher:
         # 2. Extract SMC features
         smc = self.smc_engines[symbol]
         features: SMCFeatures = smc.extract_features(bars_m5, bars_m15, bars_h1, spread_points=spread)
+        self.last_price[symbol] = features.current_price
 
-        # 3. Query active MT5 account status & positions
-        open_positions = ()
+        # 3. Query active account status & positions
+        positions = trade_manager.get_positions(self.ingestion.is_live, features.current_price, symbol)
+        history = trade_manager.get_history(self.ingestion.is_live)
+        num_open = len(positions)
         equity = 100000.0
         balance = 100000.0
         login = 0
         if self.ingestion.is_live and mt5 is not None:
-            open_positions = mt5.positions_get(symbol=symbol) or ()
             acc_info = mt5.account_info()
             if acc_info:
                 equity = acc_info.equity
@@ -219,9 +279,15 @@ class ZMQMarketPublisher:
                 login = acc_info.login
 
         # 4. Autonomous Institutional Trade Execution
-        num_open = len(open_positions)
         now = time.time()
-        if self.auto_trade_enabled and self.ingestion.is_live and num_open == 0 and (now - self.last_trade_time > 30.0):
+        auto_enabled = trade_manager.settings.get("auto_trade_enabled", True)
+        max_positions = trade_manager.settings.get("max_open_positions", 2)
+        sl_pts = float(trade_manager.settings.get("sl_points", 4.5))
+        tp_pts = float(trade_manager.settings.get("tp_points", 12.0))
+        vol = float(trade_manager.settings.get("fixed_lot_size", 0.10))
+        max_spread = float(trade_manager.settings.get("max_spread_points", 25.0))
+
+        if auto_enabled and num_open < max_positions and (now - self.last_trade_time > 30.0):
             trade_action = None
             is_discount = features.price_zone == "DISCOUNT"
             is_premium = features.price_zone == "PREMIUM"
@@ -232,28 +298,44 @@ class ZMQMarketPublisher:
             has_bull_ob = features.active_m5_ob is not None and features.active_m5_ob.direction == "BULLISH"
             has_bear_ob = features.active_m5_ob is not None and features.active_m5_ob.direction == "BEARISH"
 
-            if (is_discount or is_ssl or has_bull_fvg or has_bull_ob) and spread <= 25.0:
+            if (is_discount or is_ssl or has_bull_fvg or has_bull_ob) and spread <= max_spread:
                 trade_action = "MARKET_BUY"
-            elif (is_premium or is_bsl or has_bear_fvg or has_bear_ob) and spread <= 25.0:
+            elif (is_premium or is_bsl or has_bear_fvg or has_bear_ob) and spread <= max_spread:
                 trade_action = "MARKET_SELL"
-            elif features.h1_trend == "BULLISH" and features.m5_structure in ("BOS_BULLISH", "MSS_BULLISH") and spread <= 25.0:
+            elif features.h1_trend == "BULLISH" and features.m5_structure in ("BOS_BULLISH", "MSS_BULLISH") and spread <= max_spread:
                 trade_action = "MARKET_BUY"
-            elif features.h1_trend == "BEARISH" and features.m5_structure in ("BOS_BEARISH", "MSS_BEARISH") and spread <= 25.0:
+            elif features.h1_trend == "BEARISH" and features.m5_structure in ("BOS_BEARISH", "MSS_BEARISH") and spread <= max_spread:
                 trade_action = "MARKET_SELL"
 
             if trade_action:
-                receipt = self.gateway.execute_live_order(
-                    symbol=symbol,
-                    action=trade_action,
-                    sl_points=4.5,
-                    tp_points=12.0,
-                    comment="SparkX_Auto_Live"
-                )
+                if self.ingestion.is_live:
+                    receipt = self.gateway.execute_live_order(
+                        symbol=symbol,
+                        action=trade_action,
+                        sl_points=sl_pts,
+                        tp_points=tp_pts,
+                        lot_size=vol,
+                        comment="SparkX_Auto_Live"
+                    )
+                else:
+                    cur_px = features.current_price
+                    is_b = "BUY" in trade_action.upper()
+                    sl_p = round(cur_px - sl_pts if is_b else cur_px + sl_pts, 2)
+                    tp_p = round(cur_px + tp_pts if is_b else cur_px - tp_pts, 2)
+                    sim_ticket = trade_manager.add_simulated_position(
+                        symbol=symbol, action=trade_action, price=cur_px, volume=vol, sl=sl_p, tp=tp_p, comment="SparkX_Auto_Sim"
+                    )
+                    receipt = ExecutionReceipt(
+                        executed=True, order_id=sim_ticket, symbol=symbol, action=trade_action,
+                        price=cur_px, volume=vol, sl=sl_p, tp=tp_p, retcode=10009,
+                        status_message="SUCCESS_SIMULATED_ORDER_FILLED", latency_ms=0.5
+                    )
+
                 self.last_receipt = receipt
                 if receipt.executed:
                     self.last_trade_time = now
                     logger.info(
-                        f"*** [LIVE MT5 ORDER FILLED] *** Ticket #{receipt.order_id} {trade_action} "
+                        f"*** [ORDER FILLED] *** Ticket #{receipt.order_id} {trade_action} "
                         f"{receipt.volume} {symbol} @ {receipt.price} | SL: {receipt.sl} | TP: {receipt.tp}"
                     )
                     smc_reason = (
@@ -324,8 +406,11 @@ class ZMQMarketPublisher:
                 "equity": round(equity, 2),
                 "balance": round(balance, 2),
                 "open_positions": num_open,
-                "tickets": [p.ticket for p in open_positions]
+                "tickets": [p.get("ticket", 0) for p in positions]
             },
+            "positions": positions,
+            "history": history,
+            "settings": trade_manager.settings,
             "last_execution": {
                 "executed": self.last_receipt.executed if self.last_receipt else False,
                 "order_id": self.last_receipt.order_id if self.last_receipt else None,

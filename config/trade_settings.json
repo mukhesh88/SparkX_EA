@@ -1,0 +1,17 @@
+{
+  "auto_trade_enabled": true,
+  "lot_size_mode": "FIXED",
+  "fixed_lot_size": 0.10,
+  "risk_per_trade_pct": 1.0,
+  "sl_points": 4.5,
+  "tp_points": 12.0,
+  "max_open_positions": 2,
+  "max_spread_points": 25.0,
+  "min_setup_score": 7.0,
+  "min_confidence_pct": 85.0,
+  "require_h1_trend": true,
+  "require_m5_fvg": true,
+  "require_liquidity_sweep": false,
+  "discord_alerts": true,
+  "telegram_alerts": false
+}

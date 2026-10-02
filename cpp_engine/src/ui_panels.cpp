@@ -17,6 +17,7 @@ namespace UIPanels {
 
 static char s_console_filter[128] = "";
 static bool s_autoscroll = true;
+static bool s_show_settings_modal = false;
 
 // Rolling history for mini-sparkline charts
 static float s_gold_history[32] = {0};
@@ -174,7 +175,7 @@ void RenderHeaderAndToggle(ThreadSafeAppState& state, const MarketFrame& frame) 
 
     // Right: Pill Badges using ImGui::RenderFrame style
     bool is_mt5 = (frame.feed_source.find("MT5") != std::string::npos);
-    float right_offset = !is_mt5 ? 730.0f : 600.0f;
+    float right_offset = !is_mt5 ? 980.0f : 860.0f;
     ImGui::SameLine(ImGui::GetWindowWidth() - right_offset);
     ImGui::SetCursorPosY(ImGui::GetCursorPosY() + 8.0f);
 
@@ -189,7 +190,7 @@ void RenderHeaderAndToggle(ThreadSafeAppState& state, const MarketFrame& frame) 
         ImGui::PushStyleColor(ImGuiCol_ButtonActive, ImVec4(1.0f, 0.60f, 0.15f, 0.60f));
         ImGui::PushStyleColor(ImGuiCol_Text, CyberpunkTheme::NEON_AMBER);
         ImGui::PushStyleVar(ImGuiStyleVar_FrameRounding, 5.0f);
-        if (ImGui::Button("[+ Install MT5]", ImVec2(120.0f, 32.0f))) {
+        if (ImGui::Button("[+ Install MT5]", ImVec2(115.0f, 32.0f))) {
 #if defined(_WIN32)
             ShellExecuteA(NULL, "open", "https://download.mql5.com/cdn/web/metaquotes.software.corp/mt5/mt5setup.exe", NULL, NULL, SW_SHOWNORMAL);
 #endif
@@ -211,7 +212,7 @@ void RenderHeaderAndToggle(ThreadSafeAppState& state, const MarketFrame& frame) 
 
     // Pill 2: GPU/CUDA
     bool stream_ok = state.IsZmqConnected();
-    RenderPillBadge("GPU/CUDA", stream_ok ? "Green" : "CPU", stream_ok ? CyberpunkTheme::NEON_GREEN : CyberpunkTheme::NEON_AMBER);
+    RenderPillBadge("GPU", stream_ok ? "Green" : "CPU", stream_ok ? CyberpunkTheme::NEON_GREEN : CyberpunkTheme::NEON_AMBER);
     ImGui::SameLine();
 
     // Pill 3: CTX tokens
@@ -229,7 +230,7 @@ void RenderHeaderAndToggle(ThreadSafeAppState& state, const MarketFrame& frame) 
 
     ImVec2 m_pos = ImGui::GetCursorScreenPos();
     ImGui::PushID("mode_pill");
-    if (ImGui::InvisibleButton("##mode_toggle", ImVec2(100, 32))) {
+    if (ImGui::InvisibleButton("##mode_toggle", ImVec2(90, 32))) {
         if (current_state == EngineState::STANDBY) {
             state.SetEngineState(EngineState::ARMED);
             state.AddLog("ALERT", "Engine state transitioned to ARMED (Auto-Execution Active)");
@@ -244,10 +245,71 @@ void RenderHeaderAndToggle(ThreadSafeAppState& state, const MarketFrame& frame) 
     bool m_hov = ImGui::IsItemHovered();
     ImGui::PopID();
 
-    dl->AddRectFilled(m_pos, ImVec2(m_pos.x + 100, m_pos.y + 32), m_hov ? IM_COL32(32, 28, 24, 255) : IM_COL32(20, 18, 16, 255), 5.0f);
-    dl->AddRect(m_pos, ImVec2(m_pos.x + 100, m_pos.y + 32), ImGui::ColorConvertFloat4ToU32(mode_col), 5.0f, 0, 1.2f);
-    dl->AddText(CyberpunkTheme::g_font_regular, 12.5f, ImVec2(m_pos.x + 8, m_pos.y + 8), ImGui::ColorConvertFloat4ToU32(CyberpunkTheme::TEXT_MUTED), "Mode");
-    dl->AddText(CyberpunkTheme::g_font_bold_med, 13.0f, ImVec2(m_pos.x + 44, m_pos.y + 8), ImGui::ColorConvertFloat4ToU32(mode_col), mode_str);
+    dl->AddRectFilled(m_pos, ImVec2(m_pos.x + 90, m_pos.y + 32), m_hov ? IM_COL32(32, 28, 24, 255) : IM_COL32(20, 18, 16, 255), 5.0f);
+    dl->AddRect(m_pos, ImVec2(m_pos.x + 90, m_pos.y + 32), ImGui::ColorConvertFloat4ToU32(mode_col), 5.0f, 0, 1.2f);
+    dl->AddText(CyberpunkTheme::g_font_regular, 12.0f, ImVec2(m_pos.x + 6, m_pos.y + 8), ImGui::ColorConvertFloat4ToU32(CyberpunkTheme::TEXT_MUTED), "Mode");
+    dl->AddText(CyberpunkTheme::g_font_bold_med, 12.5f, ImVec2(m_pos.x + 38, m_pos.y + 8), ImGui::ColorConvertFloat4ToU32(mode_col), mode_str);
+
+    ImGui::SameLine();
+    ImGui::SetCursorPosY(ImGui::GetCursorPosY() + 8.0f);
+
+    // ⚙ Settings Button
+    ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.12f, 0.12f, 0.17f, 0.90f));
+    ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(0.20f, 0.20f, 0.28f, 1.00f));
+    ImGui::PushStyleColor(ImGuiCol_ButtonActive, ImVec4(0.28f, 0.28f, 0.38f, 1.00f));
+    ImGui::PushStyleColor(ImGuiCol_Text, CyberpunkTheme::NEON_CYAN);
+    ImGui::PushStyleVar(ImGuiStyleVar_FrameRounding, 5.0f);
+    if (ImGui::Button("[ ⚙ Settings ]", ImVec2(105.0f, 32.0f))) {
+        s_show_settings_modal = true;
+    }
+    ImGui::PopStyleVar();
+    ImGui::PopStyleColor(4);
+    if (ImGui::IsItemHovered()) {
+        ImGui::SetTooltip("Open Trade Settings & Risk Management Menu\n(Configure lot sizes, SL/TP brackets, auto-trading, and mobile phone alerts)");
+    }
+    ImGui::SameLine();
+
+    // Quick Manual Order Buttons: BUY, SELL, CLOSE ALL
+    ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.0f, 0.55f, 0.25f, 0.35f));
+    ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(0.0f, 0.75f, 0.35f, 0.65f));
+    ImGui::PushStyleColor(ImGuiCol_ButtonActive, ImVec4(0.0f, 0.90f, 0.40f, 0.85f));
+    ImGui::PushStyleColor(ImGuiCol_Text, CyberpunkTheme::NEON_GREEN);
+    ImGui::PushStyleVar(ImGuiStyleVar_FrameRounding, 5.0f);
+    if (ImGui::Button("+ BUY", ImVec2(55.0f, 32.0f))) {
+        state.QueueCommand("{\"command\":\"EXECUTE\",\"symbol\":\"XAUUSD\",\"action\":\"MARKET_BUY\"}");
+        state.AddLog("INFO", "[MANUAL EXEC] Dispatched MARKET BUY command for XAUUSD");
+    }
+    ImGui::PopStyleVar();
+    ImGui::PopStyleColor(4);
+    if (ImGui::IsItemHovered()) ImGui::SetTooltip("Direct Market BUY (Uses Lot Size & SL/TP from Settings)");
+    ImGui::SameLine();
+
+    ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.65f, 0.05f, 0.15f, 0.35f));
+    ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(0.85f, 0.08f, 0.20f, 0.65f));
+    ImGui::PushStyleColor(ImGuiCol_ButtonActive, ImVec4(1.0f, 0.10f, 0.25f, 0.85f));
+    ImGui::PushStyleColor(ImGuiCol_Text, CyberpunkTheme::NEON_RED);
+    ImGui::PushStyleVar(ImGuiStyleVar_FrameRounding, 5.0f);
+    if (ImGui::Button("- SELL", ImVec2(55.0f, 32.0f))) {
+        state.QueueCommand("{\"command\":\"EXECUTE\",\"symbol\":\"XAUUSD\",\"action\":\"MARKET_SELL\"}");
+        state.AddLog("INFO", "[MANUAL EXEC] Dispatched MARKET SELL command for XAUUSD");
+    }
+    ImGui::PopStyleVar();
+    ImGui::PopStyleColor(4);
+    if (ImGui::IsItemHovered()) ImGui::SetTooltip("Direct Market SELL (Uses Lot Size & SL/TP from Settings)");
+    ImGui::SameLine();
+
+    ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.35f, 0.15f, 0.15f, 0.35f));
+    ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(0.55f, 0.20f, 0.20f, 0.65f));
+    ImGui::PushStyleColor(ImGuiCol_ButtonActive, ImVec4(0.70f, 0.25f, 0.25f, 0.85f));
+    ImGui::PushStyleColor(ImGuiCol_Text, CyberpunkTheme::TEXT_MUTED);
+    ImGui::PushStyleVar(ImGuiStyleVar_FrameRounding, 5.0f);
+    if (ImGui::Button("✖ Flat", ImVec2(55.0f, 32.0f))) {
+        state.QueueCommand("{\"command\":\"CLOSE_ALL\",\"symbol\":\"XAUUSD\"}");
+        state.AddLog("ALERT", "[CLOSE ALL] Sent command to flatten all positions");
+    }
+    ImGui::PopStyleVar();
+    ImGui::PopStyleColor(4);
+    if (ImGui::IsItemHovered()) ImGui::SetTooltip("Emergency Flatten: Closes all open positions on account");
 
     ImGui::EndChild();
     ImGui::PopStyleColor(2);
@@ -608,10 +670,6 @@ void RenderSMCContext(const MarketFrame& frame) {
 // -----------------------------------------------------------------------------
 
 void RenderConsoleLog(ThreadSafeAppState& state) {
-    ImGui::PushStyleColor(ImGuiCol_ChildBg, CyberpunkTheme::BG_PANEL);
-    ImGui::PushStyleColor(ImGuiCol_Border, CyberpunkTheme::BORDER_DARK);
-    ImGui::BeginChild("ConsolePanel", ImVec2(0, 0), true);
-
     ImGui::TextColored(CyberpunkTheme::NEON_RED, "REAL-TIME DATA STREAM CONSOLE");
     ImGui::SameLine();
     ImGui::TextColored(CyberpunkTheme::TEXT_MUTED, "(Live MT5 & Laya Decision Event Stream)");
@@ -669,8 +727,498 @@ void RenderConsoleLog(ThreadSafeAppState& state) {
     ImGui::EndChild();
     ImGui::PopStyleVar(2);
     ImGui::PopStyleColor(2);
+}
+
+// -----------------------------------------------------------------------------
+// 4b. Live Open Positions Tab
+// -----------------------------------------------------------------------------
+
+void RenderOpenPositionsTab(ThreadSafeAppState& state, const MarketFrame& frame) {
+    auto positions = state.GetPositions();
+
+    // Summary Header Bar
+    double total_floating_pnl = 0.0;
+    double total_volume = 0.0;
+    for (const auto& p : positions) {
+        total_floating_pnl += p.profit;
+        total_volume += p.volume;
+    }
+
+    ImVec4 pnl_col = total_floating_pnl >= 0.0 ? CyberpunkTheme::NEON_GREEN : CyberpunkTheme::NEON_RED;
+    char pnl_buf[32];
+    std::snprintf(pnl_buf, sizeof(pnl_buf), "%s$%.2f", total_floating_pnl >= 0.0 ? "+" : "", total_floating_pnl);
+    RenderPillBadge("Floating PnL", pnl_buf, pnl_col);
+    ImGui::SameLine();
+
+    char vol_buf[32];
+    std::snprintf(vol_buf, sizeof(vol_buf), "%.2f Lots", total_volume);
+    RenderPillBadge("Open Volume", vol_buf, CyberpunkTheme::NEON_CYAN);
+    ImGui::SameLine();
+
+    RenderPillBadge("Positions", std::to_string(positions.size()).c_str(), CyberpunkTheme::TEXT_PRIMARY);
+
+    ImGui::SameLine(ImGui::GetWindowWidth() - 340.0f);
+    ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.0f, 0.50f, 0.20f, 0.40f));
+    ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(0.0f, 0.70f, 0.30f, 0.70f));
+    if (ImGui::Button("+ Market Buy", ImVec2(100.0f, 28.0f))) {
+        state.QueueCommand("{\"command\":\"EXECUTE\",\"symbol\":\"XAUUSD\",\"action\":\"MARKET_BUY\"}");
+        state.AddLog("INFO", "Manual Market BUY triggered from Positions tab");
+    }
+    ImGui::PopStyleColor(2);
+
+    ImGui::SameLine();
+    ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.60f, 0.05f, 0.15f, 0.40f));
+    ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(0.80f, 0.08f, 0.20f, 0.70f));
+    if (ImGui::Button("- Market Sell", ImVec2(100.0f, 28.0f))) {
+        state.QueueCommand("{\"command\":\"EXECUTE\",\"symbol\":\"XAUUSD\",\"action\":\"MARKET_SELL\"}");
+        state.AddLog("INFO", "Manual Market SELL triggered from Positions tab");
+    }
+    ImGui::PopStyleColor(2);
+
+    ImGui::SameLine();
+    ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.35f, 0.15f, 0.15f, 0.40f));
+    ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(0.55f, 0.20f, 0.20f, 0.70f));
+    if (ImGui::Button("Close All", ImVec2(90.0f, 28.0f))) {
+        state.QueueCommand("{\"command\":\"CLOSE_ALL\",\"symbol\":\"XAUUSD\"}");
+        state.AddLog("ALERT", "Close All Positions triggered from Positions tab");
+    }
+    ImGui::PopStyleColor(2);
+
+    ImGui::Separator();
+
+    if (positions.empty()) {
+        ImGui::Dummy(ImVec2(0, 24));
+        ImGui::SetCursorPosX(ImGui::GetWindowWidth() * 0.36f);
+        ImGui::TextColored(CyberpunkTheme::TEXT_MUTED, "[ No active market positions open ]");
+        ImGui::SetCursorPosX(ImGui::GetWindowWidth() * 0.30f);
+        ImGui::TextColored(CyberpunkTheme::NEON_CYAN, "The Laya ONNX execution gate is scanning for institutional SMC setups...");
+        return;
+    }
+
+    // Positions Table
+    ImGuiTableFlags table_flags = ImGuiTableFlags_RowBg | ImGuiTableFlags_BordersInnerV | 
+                                 ImGuiTableFlags_ScrollY | ImGuiTableFlags_SizingStretchProp;
+    if (ImGui::BeginTable("PositionsTable", 11, table_flags)) {
+        ImGui::TableSetupColumn("Ticket", ImGuiTableColumnFlags_WidthFixed, 90.0f);
+        ImGui::TableSetupColumn("Time", ImGuiTableColumnFlags_WidthFixed, 80.0f);
+        ImGui::TableSetupColumn("Symbol", ImGuiTableColumnFlags_WidthFixed, 85.0f);
+        ImGui::TableSetupColumn("Type", ImGuiTableColumnFlags_WidthFixed, 75.0f);
+        ImGui::TableSetupColumn("Lots", ImGuiTableColumnFlags_WidthFixed, 65.0f);
+        ImGui::TableSetupColumn("Open Price", ImGuiTableColumnFlags_WidthFixed, 100.0f);
+        ImGui::TableSetupColumn("Current Price", ImGuiTableColumnFlags_WidthFixed, 105.0f);
+        ImGui::TableSetupColumn("Stop Loss", ImGuiTableColumnFlags_WidthFixed, 95.0f);
+        ImGui::TableSetupColumn("Take Profit", ImGuiTableColumnFlags_WidthFixed, 95.0f);
+        ImGui::TableSetupColumn("Floating PnL ($)", ImGuiTableColumnFlags_WidthFixed, 120.0f);
+        ImGui::TableSetupColumn("Action", ImGuiTableColumnFlags_WidthFixed, 80.0f);
+        ImGui::TableHeadersRow();
+
+        for (const auto& pos : positions) {
+            ImGui::TableNextRow();
+
+            // 1. Ticket
+            ImGui::TableNextColumn();
+            ImGui::TextColored(CyberpunkTheme::TEXT_MUTED, "#%llu", (unsigned long long)pos.ticket);
+
+            // 2. Time
+            ImGui::TableNextColumn();
+            ImGui::TextUnformatted(pos.time_str.empty() ? "--:--" : pos.time_str.c_str());
+
+            // 3. Symbol
+            ImGui::TableNextColumn();
+            ImGui::TextColored(CyberpunkTheme::NEON_AMBER, "%s", pos.symbol.c_str());
+
+            // 4. Type
+            ImGui::TableNextColumn();
+            bool is_buy = pos.type.find("BUY") != std::string::npos;
+            ImGui::TextColored(is_buy ? CyberpunkTheme::NEON_GREEN : CyberpunkTheme::NEON_RED, "%s", pos.type.c_str());
+
+            // 5. Volume
+            ImGui::TableNextColumn();
+            ImGui::Text("%.2f", pos.volume);
+
+            // 6. Open Price
+            ImGui::TableNextColumn();
+            ImGui::Text("$%.2f", pos.price_open);
+
+            // 7. Current Price
+            ImGui::TableNextColumn();
+            ImGui::TextColored(CyberpunkTheme::TEXT_PRIMARY, "$%.2f", pos.price_current > 0 ? pos.price_current : frame.price);
+
+            // 8. Stop Loss
+            ImGui::TableNextColumn();
+            ImGui::TextColored(CyberpunkTheme::NEON_RED_HOVER, "$%.2f", pos.sl);
+
+            // 9. Take Profit
+            ImGui::TableNextColumn();
+            ImGui::TextColored(CyberpunkTheme::NEON_GREEN, "$%.2f", pos.tp);
+
+            // 10. Floating PnL
+            ImGui::TableNextColumn();
+            ImVec4 profit_col = pos.profit >= 0.0 ? CyberpunkTheme::NEON_GREEN : CyberpunkTheme::NEON_RED;
+            ImGui::TextColored(profit_col, "%s$%.2f", pos.profit >= 0.0 ? "+" : "", pos.profit);
+
+            // 11. Action Close Button
+            ImGui::TableNextColumn();
+            char btn_id[64];
+            std::snprintf(btn_id, sizeof(btn_id), "Close##%llu", (unsigned long long)pos.ticket);
+            ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.60f, 0.10f, 0.15f, 0.60f));
+            ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(0.80f, 0.15f, 0.20f, 0.90f));
+            if (ImGui::Button(btn_id, ImVec2(65.0f, 22.0f))) {
+                char cmd[128];
+                std::snprintf(cmd, sizeof(cmd), "{\"command\":\"CLOSE_TICKET\",\"ticket\":%llu,\"symbol\":\"%s\"}", (unsigned long long)pos.ticket, pos.symbol.c_str());
+                state.QueueCommand(cmd);
+                state.AddLog("INFO", "Requested closure of position #" + std::to_string(pos.ticket));
+            }
+            ImGui::PopStyleColor(2);
+        }
+        ImGui::EndTable();
+    }
+}
+
+// -----------------------------------------------------------------------------
+// 4c. Trade History Tab
+// -----------------------------------------------------------------------------
+
+void RenderTradeHistoryTab(ThreadSafeAppState& state) {
+    auto history = state.GetHistory();
+
+    // Calculate Summary Stats
+    int total_trades = (int)history.size();
+    int wins = 0;
+    double net_pnl = 0.0;
+    double total_win_pnl = 0.0;
+    double total_loss_pnl = 0.0;
+
+    for (const auto& item : history) {
+        net_pnl += item.profit;
+        if (item.profit >= 0.0) {
+            wins++;
+            total_win_pnl += item.profit;
+        } else {
+            total_loss_pnl += std::abs(item.profit);
+        }
+    }
+
+    float win_rate = total_trades > 0 ? ((float)wins / (float)total_trades * 100.0f) : 0.0f;
+    float profit_factor = total_loss_pnl > 0.01 ? (float)(total_win_pnl / total_loss_pnl) : (total_win_pnl > 0 ? 9.9f : 0.0f);
+
+    // Badges Row
+    RenderPillBadge("Total Deals", std::to_string(total_trades).c_str(), CyberpunkTheme::TEXT_PRIMARY);
+    ImGui::SameLine();
+
+    char wr_buf[32];
+    std::snprintf(wr_buf, sizeof(wr_buf), "%.1f%%", win_rate);
+    RenderPillBadge("Win Rate", wr_buf, win_rate >= 50.0f ? CyberpunkTheme::NEON_GREEN : CyberpunkTheme::NEON_RED);
+    ImGui::SameLine();
+
+    char net_buf[32];
+    std::snprintf(net_buf, sizeof(net_buf), "%s$%.2f", net_pnl >= 0.0 ? "+" : "", net_pnl);
+    RenderPillBadge("Net Profit", net_buf, net_pnl >= 0.0 ? CyberpunkTheme::NEON_GREEN : CyberpunkTheme::NEON_RED);
+    ImGui::SameLine();
+
+    char pf_buf[32];
+    std::snprintf(pf_buf, sizeof(pf_buf), "%.2f", profit_factor);
+    RenderPillBadge("Profit Factor", pf_buf, profit_factor >= 1.5f ? CyberpunkTheme::NEON_GREEN : CyberpunkTheme::NEON_AMBER);
+
+    ImGui::Separator();
+
+    if (history.empty()) {
+        ImGui::Dummy(ImVec2(0, 24));
+        ImGui::SetCursorPosX(ImGui::GetWindowWidth() * 0.38f);
+        ImGui::TextColored(CyberpunkTheme::TEXT_MUTED, "[ No trade history records found ]");
+        return;
+    }
+
+    // Trade History Table
+    ImGuiTableFlags table_flags = ImGuiTableFlags_RowBg | ImGuiTableFlags_BordersInnerV | 
+                                 ImGuiTableFlags_ScrollY | ImGuiTableFlags_SizingStretchProp;
+    if (ImGui::BeginTable("HistoryTable", 10, table_flags)) {
+        ImGui::TableSetupColumn("Ticket", ImGuiTableColumnFlags_WidthFixed, 90.0f);
+        ImGui::TableSetupColumn("Close Time", ImGuiTableColumnFlags_WidthFixed, 95.0f);
+        ImGui::TableSetupColumn("Symbol", ImGuiTableColumnFlags_WidthFixed, 85.0f);
+        ImGui::TableSetupColumn("Action", ImGuiTableColumnFlags_WidthFixed, 75.0f);
+        ImGui::TableSetupColumn("Lots", ImGuiTableColumnFlags_WidthFixed, 65.0f);
+        ImGui::TableSetupColumn("Open Price", ImGuiTableColumnFlags_WidthFixed, 100.0f);
+        ImGui::TableSetupColumn("Close Price", ImGuiTableColumnFlags_WidthFixed, 100.0f);
+        ImGui::TableSetupColumn("Net PnL ($)", ImGuiTableColumnFlags_WidthFixed, 110.0f);
+        ImGui::TableSetupColumn("Outcome", ImGuiTableColumnFlags_WidthFixed, 85.0f);
+        ImGui::TableSetupColumn("Strategy / Confluence", ImGuiTableColumnFlags_WidthStretch);
+        ImGui::TableHeadersRow();
+
+        for (const auto& item : history) {
+            ImGui::TableNextRow();
+
+            // 1. Ticket
+            ImGui::TableNextColumn();
+            ImGui::TextColored(CyberpunkTheme::TEXT_MUTED, "#%llu", (unsigned long long)item.ticket);
+
+            // 2. Time
+            ImGui::TableNextColumn();
+            ImGui::TextUnformatted(item.time_str.c_str());
+
+            // 3. Symbol
+            ImGui::TableNextColumn();
+            ImGui::TextColored(CyberpunkTheme::NEON_AMBER, "%s", item.symbol.c_str());
+
+            // 4. Action
+            ImGui::TableNextColumn();
+            bool is_buy = item.type.find("BUY") != std::string::npos;
+            ImGui::TextColored(is_buy ? CyberpunkTheme::NEON_GREEN : CyberpunkTheme::NEON_RED, "%s", item.type.c_str());
+
+            // 5. Volume
+            ImGui::TableNextColumn();
+            ImGui::Text("%.2f", item.volume);
+
+            // 6. Open Price
+            ImGui::TableNextColumn();
+            ImGui::Text("$%.2f", item.price_open);
+
+            // 7. Close Price
+            ImGui::TableNextColumn();
+            ImGui::Text("$%.2f", item.price_close);
+
+            // 8. Net PnL
+            ImGui::TableNextColumn();
+            ImVec4 pnl_color = item.profit >= 0.0 ? CyberpunkTheme::NEON_GREEN : CyberpunkTheme::NEON_RED;
+            ImGui::TextColored(pnl_color, "%s$%.2f", item.profit >= 0.0 ? "+" : "", item.profit);
+
+            // 9. Outcome Badge
+            ImGui::TableNextColumn();
+            bool is_win = (item.outcome == "WIN" || item.profit >= 0.0);
+            ImVec4 badge_bg = is_win ? ImVec4(0.0f, 0.40f, 0.15f, 0.50f) : ImVec4(0.50f, 0.05f, 0.10f, 0.50f);
+            ImVec4 badge_txt = is_win ? CyberpunkTheme::NEON_GREEN : CyberpunkTheme::NEON_RED;
+            ImGui::PushStyleColor(ImGuiCol_Button, badge_bg);
+            ImGui::PushStyleColor(ImGuiCol_Text, badge_txt);
+            ImGui::SmallButton(is_win ? " WIN " : " LOSS ");
+            ImGui::PopStyleColor(2);
+
+            // 10. Comment / Confluence
+            ImGui::TableNextColumn();
+            ImGui::TextColored(CyberpunkTheme::TEXT_MUTED, "%s", item.comment.c_str());
+        }
+        ImGui::EndTable();
+    }
+}
+
+// -----------------------------------------------------------------------------
+// 4. Bottom Row: Tabbed Inset Panel (Console, Open Positions, Trade History)
+// -----------------------------------------------------------------------------
+
+void RenderBottomSection(ThreadSafeAppState& state, const MarketFrame& frame) {
+    ImGui::PushStyleColor(ImGuiCol_ChildBg, CyberpunkTheme::BG_PANEL);
+    ImGui::PushStyleColor(ImGuiCol_Border, CyberpunkTheme::BORDER_DARK);
+    ImGui::BeginChild("BottomTabbedPanel", ImVec2(0, 0), true);
+
+    auto positions = state.GetPositions();
+    auto history = state.GetHistory();
+
+    char pos_title[64];
+    std::snprintf(pos_title, sizeof(pos_title), "  Open Positions (%d)  ", (int)positions.size());
+
+    char hist_title[64];
+    std::snprintf(hist_title, sizeof(hist_title), "  Trade History (%d)  ", (int)history.size());
+
+    if (ImGui::BeginTabBar("BottomTabBar", ImGuiTabBarFlags_FittingPolicyScroll)) {
+        if (ImGui::BeginTabItem("  >_ Event Stream Console  ")) {
+            RenderConsoleLog(state);
+            ImGui::EndTabItem();
+        }
+        if (ImGui::BeginTabItem(pos_title)) {
+            RenderOpenPositionsTab(state, frame);
+            ImGui::EndTabItem();
+        }
+        if (ImGui::BeginTabItem(hist_title)) {
+            RenderTradeHistoryTab(state);
+            ImGui::EndTabItem();
+        }
+        ImGui::EndTabBar();
+    }
 
     ImGui::EndChild();
+    ImGui::PopStyleColor(2);
+}
+
+// -----------------------------------------------------------------------------
+// 5. Trade Settings Modal Dialog
+// -----------------------------------------------------------------------------
+
+void RenderTradeSettingsModal(ThreadSafeAppState& state) {
+    if (s_show_settings_modal) {
+        ImGui::OpenPopup("TRADE SETTINGS & RISK CONSTRAINTS");
+    }
+
+    ImVec2 center = ImGui::GetMainViewport()->GetCenter();
+    ImGui::SetNextWindowPos(center, ImGuiCond_Appearing, ImVec2(0.5f, 0.5f));
+    ImGui::SetNextWindowSize(ImVec2(750, 560), ImGuiCond_Appearing);
+
+    ImGui::PushStyleColor(ImGuiCol_PopupBg, CyberpunkTheme::BG_WINDOW);
+    ImGui::PushStyleColor(ImGuiCol_Border, CyberpunkTheme::BORDER_DARK);
+    ImGui::PushStyleVar(ImGuiStyleVar_WindowRounding, 8.0f);
+    ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(18.0f, 16.0f));
+
+    if (ImGui::BeginPopupModal("TRADE SETTINGS & RISK CONSTRAINTS", &s_show_settings_modal, ImGuiWindowFlags_NoResize)) {
+        static TradeSettings edit_s;
+        static bool s_loaded = false;
+        if (!s_loaded) {
+            edit_s = state.GetSettings();
+            s_loaded = true;
+        }
+
+        // Header Title
+        ImGui::PushFont(CyberpunkTheme::g_font_bold_med);
+        ImGui::TextColored(CyberpunkTheme::NEON_CYAN, "SPARKX // ALGORITHMIC TRADE SETTINGS & RISK GATES");
+        ImGui::PopFont();
+        ImGui::TextColored(CyberpunkTheme::TEXT_MUTED, "Configure position sizing, SL/TP brackets, institutional SMC filters, and phone notifications.");
+        ImGui::Separator();
+        ImGui::Dummy(ImVec2(0, 6));
+
+        if (ImGui::BeginTabBar("SettingsTabs", ImGuiTabBarFlags_None)) {
+            // TAB 1: SIZING & RISK
+            if (ImGui::BeginTabItem("  1. Execution & Sizing  ")) {
+                ImGui::Dummy(ImVec2(0, 8));
+                ImGui::Checkbox("Enable Autonomous Laya-ONNX & SMC Trading", &edit_s.auto_trade_enabled);
+                ImGui::SameLine();
+                ImGui::TextColored(edit_s.auto_trade_enabled ? CyberpunkTheme::NEON_GREEN : CyberpunkTheme::NEON_AMBER,
+                                  "(%s)", edit_s.auto_trade_enabled ? "ACTIVE" : "STANDBY");
+
+                ImGui::Dummy(ImVec2(0, 6));
+                const char* lot_modes[] = { "Fixed Lot Size", "Dynamic Account Risk %" };
+                ImGui::Combo("Lot Sizing Mode", &edit_s.lot_mode, lot_modes, IM_ARRAYSIZE(lot_modes));
+
+                if (edit_s.lot_mode == 0) {
+                    ImGui::SliderFloat("Fixed Volume (Lots)", &edit_s.fixed_lot, 0.01f, 5.0f, "%.2f Lots");
+                } else {
+                    ImGui::SliderFloat("Account Risk per Trade (%)", &edit_s.risk_pct, 0.25f, 5.0f, "%.2f %%");
+                }
+
+                ImGui::Dummy(ImVec2(0, 6));
+                ImGui::Separator();
+                ImGui::TextColored(CyberpunkTheme::NEON_AMBER, "Order Bracket Constraints:");
+                ImGui::SliderFloat("Stop Loss Distance (Points / $)", &edit_s.sl_points, 1.0f, 20.0f, "%.1f pts ($)");
+                ImGui::SliderFloat("Take Profit Distance (Points / $)", &edit_s.tp_points, 2.0f, 40.0f, "%.1f pts ($)");
+
+                float rr = edit_s.tp_points / (edit_s.sl_points > 0.01f ? edit_s.sl_points : 1.0f);
+                ImGui::Text("Calculated Risk : Reward Ratio: ");
+                ImGui::SameLine();
+                ImGui::TextColored(CyberpunkTheme::NEON_GREEN, "1 : %.2f R:R", rr);
+
+                ImGui::Dummy(ImVec2(0, 6));
+                ImGui::SliderInt("Max Simultaneous Open Positions", &edit_s.max_positions, 1, 5);
+                ImGui::SliderFloat("Max Allowed Spread Filter", &edit_s.max_spread, 5.0f, 50.0f, "%.1f pts");
+
+                ImGui::EndTabItem();
+            }
+
+            // TAB 2: SMC & AI CONFLUENCE GATES
+            if (ImGui::BeginTabItem("  2. SMC & AI Filters  ")) {
+                ImGui::Dummy(ImVec2(0, 8));
+                ImGui::TextColored(CyberpunkTheme::NEON_AMBER, "Neural Network & Structural Confluence Gates:");
+                ImGui::Dummy(ImVec2(0, 4));
+
+                ImGui::SliderFloat("Min Setup Quality Score", &edit_s.min_score, 5.0f, 9.5f, "%.1f / 10.0");
+                ImGui::SliderFloat("Min Laya AI Confidence", &edit_s.min_confidence, 70.0f, 98.0f, "%.1f %%");
+
+                ImGui::Dummy(ImVec2(0, 6));
+                ImGui::Separator();
+                ImGui::TextColored(CyberpunkTheme::TEXT_MUTED, "SMC Pre-Execution Rules:");
+                ImGui::Checkbox("Require Higher-Timeframe (H1) Trend Alignment", &edit_s.require_h1_trend);
+                ImGui::Checkbox("Require Active M5 Fair Value Gap (FVG) Retest", &edit_s.require_m5_fvg);
+                ImGui::Checkbox("Require Prior Liquidity Pool Sweep (BSL / SSL)", &edit_s.require_liquidity_sweep);
+
+                ImGui::EndTabItem();
+            }
+
+            // TAB 3: PHONE & MOBILE ALERTS
+            if (ImGui::BeginTabItem("  3. Phone Alerts  ")) {
+                ImGui::Dummy(ImVec2(0, 8));
+                ImGui::TextColored(CyberpunkTheme::NEON_CYAN, "Mobile Phone Push Alerts (Discord Webhooks & Telegram):");
+                ImGui::Dummy(ImVec2(0, 4));
+
+                ImGui::Checkbox("Enable Discord Webhook Alerts", &edit_s.discord_alerts);
+                ImGui::InputText("Discord Webhook URL", edit_s.discord_webhook, sizeof(edit_s.discord_webhook));
+
+                ImGui::Dummy(ImVec2(0, 6));
+                ImGui::Checkbox("Enable Telegram Bot Alerts", &edit_s.telegram_alerts);
+                ImGui::InputText("Telegram Bot Token", edit_s.telegram_token, sizeof(edit_s.telegram_token));
+                ImGui::InputText("Telegram Chat ID", edit_s.telegram_chat_id, sizeof(edit_s.telegram_chat_id));
+
+                ImGui::Dummy(ImVec2(0, 10));
+                ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.15f, 0.40f, 0.60f, 0.50f));
+                ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(0.20f, 0.55f, 0.80f, 0.80f));
+                if (ImGui::Button("🔔 Send Test Verification Signal to Phone", ImVec2(320.0f, 32.0f))) {
+                    state.QueueCommand("{\"command\":\"TEST_ALERT\",\"symbol\":\"XAUUSD\"}");
+                    state.AddLog("INFO", "Sent test verification alert to phone via Discord/Telegram");
+                }
+                ImGui::PopStyleColor(2);
+
+                ImGui::EndTabItem();
+            }
+            ImGui::EndTabBar();
+        }
+
+        // Footer Actions
+        ImGui::Dummy(ImVec2(0, 16));
+        ImGui::Separator();
+        ImGui::Dummy(ImVec2(0, 4));
+
+        ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.0f, 0.55f, 0.25f, 0.80f));
+        ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(0.0f, 0.75f, 0.35f, 1.00f));
+        if (ImGui::Button("✔ Apply & Save Settings", ImVec2(180.0f, 34.0f))) {
+            state.SetSettings(edit_s);
+
+            char cmd[1024];
+            std::snprintf(cmd, sizeof(cmd),
+                "{\"command\":\"UPDATE_SETTINGS\",\"settings\":{"
+                "\"auto_trade_enabled\":%s,"
+                "\"fixed_lot_size\":%.2f,"
+                "\"risk_per_trade_pct\":%.2f,"
+                "\"sl_points\":%.2f,"
+                "\"tp_points\":%.2f,"
+                "\"max_open_positions\":%d,"
+                "\"max_spread_points\":%.2f,"
+                "\"min_setup_score\":%.2f,"
+                "\"min_confidence_pct\":%.2f,"
+                "\"require_h1_trend\":%s,"
+                "\"require_m5_fvg\":%s,"
+                "\"require_liquidity_sweep\":%s,"
+                "\"discord_alerts\":%s"
+                "}}",
+                edit_s.auto_trade_enabled ? "true" : "false",
+                edit_s.fixed_lot,
+                edit_s.risk_pct,
+                edit_s.sl_points,
+                edit_s.tp_points,
+                edit_s.max_positions,
+                edit_s.max_spread,
+                edit_s.min_score,
+                edit_s.min_confidence,
+                edit_s.require_h1_trend ? "true" : "false",
+                edit_s.require_m5_fvg ? "true" : "false",
+                edit_s.require_liquidity_sweep ? "true" : "false",
+                edit_s.discord_alerts ? "true" : "false"
+            );
+            state.QueueCommand(cmd);
+            state.AddLog("INFO", "Applied & saved trade settings.");
+            s_show_settings_modal = false;
+            ImGui::CloseCurrentPopup();
+        }
+        ImGui::PopStyleColor(2);
+
+        ImGui::SameLine();
+        if (ImGui::Button("Reset Defaults", ImVec2(130.0f, 34.0f))) {
+            TradeSettings def;
+            edit_s = def;
+        }
+
+        ImGui::SameLine(ImGui::GetWindowWidth() - 110.0f);
+        if (ImGui::Button("Close", ImVec2(90.0f, 34.0f))) {
+            s_show_settings_modal = false;
+            ImGui::CloseCurrentPopup();
+        }
+
+        ImGui::EndPopup();
+    }
+    ImGui::PopStyleVar(2);
     ImGui::PopStyleColor(2);
 }
 
@@ -681,7 +1229,7 @@ void RenderConsoleLog(ThreadSafeAppState& state) {
 void RenderDashboard(ThreadSafeAppState& state) {
     MarketFrame frame = state.GetLatestFrame();
 
-    // 1. Top Bar: Header, Pill Badges, Asset Selector Cards, and Mode Toggle
+    // 1. Top Bar: Header, Pill Badges, Asset Selector Cards, Mode Toggle, and Trade Controls
     RenderHeaderAndToggle(state, frame);
 
     // 2. Main Row: Large Digital Readouts for Laya Primitives
@@ -690,8 +1238,11 @@ void RenderDashboard(ThreadSafeAppState& state) {
     // 3. Middle Row: Market State & SMC Feature Telemetry Matrix (5 Glassmorphic Cards)
     RenderSMCContext(frame);
 
-    // 4. Bottom Row: Inset Real-time Data Stream Console (#050505)
-    RenderConsoleLog(state);
+    // 4. Bottom Row: Tabbed Inset Panel (Console Stream, Open Positions, Trade History)
+    RenderBottomSection(state, frame);
+
+    // 5. Settings Modal (if opened)
+    RenderTradeSettingsModal(state);
 }
 
 } // namespace UIPanels

@@ -122,8 +122,94 @@ static bool ExtractJsonBool(const std::string& json, const std::string& key, boo
     return default_val;
 }
 
+static std::vector<std::string> ExtractJsonArray(const std::string& json, const std::string& key) {
+    std::vector<std::string> items;
+    std::string pattern = "\"" + key + "\"";
+    size_t pos = json.find(pattern);
+    if (pos == std::string::npos) return items;
+    pos = json.find('[', pos + pattern.size());
+    if (pos == std::string::npos) return items;
+    pos++;
+    
+    int depth = 0;
+    size_t obj_start = std::string::npos;
+    for (size_t i = pos; i < json.size(); ++i) {
+        char c = json[i];
+        if (c == '{') {
+            if (depth == 0) obj_start = i;
+            depth++;
+        } else if (c == '}') {
+            depth--;
+            if (depth == 0 && obj_start != std::string::npos) {
+                items.push_back(json.substr(obj_start, i - obj_start + 1));
+                obj_start = std::string::npos;
+            }
+        } else if (c == ']' && depth == 0) {
+            break;
+        }
+    }
+    return items;
+}
+
 void ZMQListenerWorker::ProcessMessagePayload(const std::string& json_payload, int sock) {
     MarketFrame frame;
+
+    // Flush any pending commands queued from C++ UI
+    if (sock >= 0) {
+        auto outgoing = state_.PopCommands();
+        for (const auto& cmd : outgoing) {
+            std::string msg = cmd + "\n";
+            send(sock, msg.c_str(), (int)msg.size(), 0);
+        }
+    }
+
+    // Parse active open positions if present
+    auto pos_objs = ExtractJsonArray(json_payload, "positions");
+    if (!pos_objs.empty() || json_payload.find("\"positions\": []") != std::string::npos || json_payload.find("\"positions\":[]") != std::string::npos) {
+        std::vector<TradePosition> positions;
+        for (const auto& obj : pos_objs) {
+            TradePosition p;
+            p.ticket = (uint64_t)ExtractJsonNumber(obj, "ticket", 0);
+            p.time = (uint64_t)ExtractJsonNumber(obj, "time", 0);
+            p.time_str = ExtractJsonString(obj, "time_str");
+            p.symbol = ExtractJsonString(obj, "symbol");
+            if (p.symbol.empty()) p.symbol = "XAUUSD";
+            p.type = ExtractJsonString(obj, "type");
+            p.volume = ExtractJsonNumber(obj, "volume", 0.1);
+            p.price_open = ExtractJsonNumber(obj, "price_open", 0.0);
+            p.price_current = ExtractJsonNumber(obj, "price_current", 0.0);
+            p.sl = ExtractJsonNumber(obj, "sl", 0.0);
+            p.tp = ExtractJsonNumber(obj, "tp", 0.0);
+            p.profit = ExtractJsonNumber(obj, "profit", 0.0);
+            p.comment = ExtractJsonString(obj, "comment");
+            positions.push_back(p);
+        }
+        state_.UpdatePositions(positions);
+    }
+
+    // Parse completed trade history if present
+    auto hist_objs = ExtractJsonArray(json_payload, "history");
+    if (!hist_objs.empty()) {
+        std::vector<TradeHistoryItem> history;
+        for (const auto& obj : hist_objs) {
+            TradeHistoryItem h;
+            h.ticket = (uint64_t)ExtractJsonNumber(obj, "ticket", 0);
+            h.time = (uint64_t)ExtractJsonNumber(obj, "time", 0);
+            h.time_str = ExtractJsonString(obj, "time_str");
+            h.symbol = ExtractJsonString(obj, "symbol");
+            if (h.symbol.empty()) h.symbol = "XAUUSD";
+            h.type = ExtractJsonString(obj, "type");
+            h.volume = ExtractJsonNumber(obj, "volume", 0.1);
+            h.price_open = ExtractJsonNumber(obj, "price_open", 0.0);
+            h.price_close = ExtractJsonNumber(obj, "price_close", 0.0);
+            h.profit = ExtractJsonNumber(obj, "profit", 0.0);
+            h.outcome = ExtractJsonString(obj, "outcome");
+            if (h.outcome.empty()) h.outcome = (h.profit >= 0.0) ? "WIN" : "LOSS";
+            h.comment = ExtractJsonString(obj, "comment");
+            history.push_back(h);
+        }
+        state_.UpdateHistory(history);
+    }
 
     // Check for incoming execution notifications from Python MT5 Gateway
     bool exec_done = ExtractJsonBool(json_payload, "executed", false);
@@ -324,8 +410,19 @@ void ZMQListenerWorker::RunLoop() {
                 if (err != WSAETIMEDOUT) {
                     state_.AddLog("WARN", "Market stream socket error (" + std::to_string(err) + "). Reconnecting...");
                     break;
+                } else {
+                    auto outgoing = state_.PopCommands();
+                    for (const auto& cmd : outgoing) {
+                        std::string msg = cmd + "\n";
+                        send(sock, msg.c_str(), (int)msg.size(), 0);
+                    }
                 }
 #else
+                auto outgoing = state_.PopCommands();
+                for (const auto& cmd : outgoing) {
+                    std::string msg = cmd + "\n";
+                    send(sock, msg.c_str(), (int)msg.size(), 0);
+                }
                 break;
 #endif
             }

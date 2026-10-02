@@ -11,4 +11,8 @@ namespace UIPanels {
     void RenderLayaPrimitives(const LayaOutput& laya, const MarketFrame& frame);
     void RenderSMCContext(const MarketFrame& frame);
     void RenderConsoleLog(ThreadSafeAppState& state);
+    void RenderBottomSection(ThreadSafeAppState& state, const MarketFrame& frame);
+    void RenderOpenPositionsTab(ThreadSafeAppState& state, const MarketFrame& frame);
+    void RenderTradeHistoryTab(ThreadSafeAppState& state);
+    void RenderTradeSettingsModal(ThreadSafeAppState& state);
 }

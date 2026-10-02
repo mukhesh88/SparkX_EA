@@ -94,6 +94,56 @@ struct ConsoleLogEntry {
     std::string message;
 };
 
+struct TradePosition {
+    uint64_t ticket = 0;
+    uint64_t time = 0;
+    std::string time_str;
+    std::string symbol = "XAUUSD";
+    std::string type = "BUY"; // "BUY" or "SELL"
+    double volume = 0.10;
+    double price_open = 0.0;
+    double price_current = 0.0;
+    double sl = 0.0;
+    double tp = 0.0;
+    double profit = 0.0;
+    std::string comment;
+};
+
+struct TradeHistoryItem {
+    uint64_t ticket = 0;
+    uint64_t time = 0;
+    std::string time_str;
+    std::string symbol = "XAUUSD";
+    std::string type = "BUY"; // "BUY" or "SELL"
+    double volume = 0.10;
+    double price_open = 0.0;
+    double price_close = 0.0;
+    double profit = 0.0;
+    std::string outcome = "WIN"; // "WIN" or "LOSS"
+    std::string comment;
+};
+
+struct TradeSettings {
+    bool auto_trade_enabled = true;
+    int lot_mode = 0; // 0 = Fixed Lot, 1 = Dynamic Risk %
+    float fixed_lot = 0.10f;
+    float risk_pct = 1.0f;
+    float sl_points = 4.5f;
+    float tp_points = 12.0f;
+    int max_positions = 2;
+    float max_spread = 25.0f;
+    float min_score = 7.0f;
+    float min_confidence = 85.0f;
+    bool require_h1_trend = true;
+    bool require_m5_fvg = true;
+    bool require_liquidity_sweep = false;
+    bool discord_alerts = true;
+    bool telegram_alerts = false;
+    char discord_webhook[512] = "https://discord.com/api/webhooks/1555175799231881266/bkqKtxRVSnHN6Lbb9pD0r7vGOVCVu7m12fm-nd5YkIRzB-hx2MU8uPwnD1KYQ6kfZeLH";
+    char telegram_token[128] = "";
+    char telegram_chat_id[64] = "";
+};
+
 class ThreadSafeAppState {
 public:
     ThreadSafeAppState() = default;
@@ -190,6 +240,52 @@ public:
         return zmq_connected_.load(std::memory_order_relaxed);
     }
 
+    // Trade Positions Management
+    void UpdatePositions(const std::vector<TradePosition>& pos) {
+        std::lock_guard<std::mutex> lock(trade_mutex_);
+        positions_ = pos;
+    }
+
+    std::vector<TradePosition> GetPositions() const {
+        std::lock_guard<std::mutex> lock(trade_mutex_);
+        return positions_;
+    }
+
+    // Trade History Management
+    void UpdateHistory(const std::vector<TradeHistoryItem>& hist) {
+        std::lock_guard<std::mutex> lock(trade_mutex_);
+        history_ = hist;
+    }
+
+    std::vector<TradeHistoryItem> GetHistory() const {
+        std::lock_guard<std::mutex> lock(trade_mutex_);
+        return history_;
+    }
+
+    // Trade Settings Management
+    void SetSettings(const TradeSettings& settings) {
+        std::lock_guard<std::mutex> lock(trade_mutex_);
+        settings_ = settings;
+    }
+
+    TradeSettings GetSettings() const {
+        std::lock_guard<std::mutex> lock(trade_mutex_);
+        return settings_;
+    }
+
+    // Thread-safe Outgoing Command Queue
+    void QueueCommand(const std::string& cmd_json) {
+        std::lock_guard<std::mutex> lock(cmd_mutex_);
+        command_queue_.push_back(cmd_json);
+    }
+
+    std::vector<std::string> PopCommands() {
+        std::lock_guard<std::mutex> lock(cmd_mutex_);
+        std::vector<std::string> cmds = std::move(command_queue_);
+        command_queue_.clear();
+        return cmds;
+    }
+
 private:
     std::atomic<EngineState> engine_state_{EngineState::ARMED};
     std::atomic<bool> zmq_connected_{false};
@@ -201,4 +297,12 @@ private:
 
     mutable std::mutex log_mutex_;
     std::deque<ConsoleLogEntry> logs_;
+
+    mutable std::mutex trade_mutex_;
+    std::vector<TradePosition> positions_;
+    std::vector<TradeHistoryItem> history_;
+    TradeSettings settings_;
+
+    mutable std::mutex cmd_mutex_;
+    std::vector<std::string> command_queue_;
 };

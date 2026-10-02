@@ -562,3 +562,42 @@ class MT5ExecutionGateway:
                 logger.info(f"Closed position #{pos.ticket} for {pos.symbol}")
         return closed_tickets
 
+    def close_position_by_ticket(self, ticket: int) -> bool:
+        """Closes a specific open position by its ticket number."""
+        if not MT5_AVAILABLE or not mt5.initialize():
+            return False
+        positions = mt5.positions_get(ticket=ticket)
+        if not positions:
+            return False
+        pos = positions[0]
+        order_type = mt5.ORDER_TYPE_SELL if pos.type == mt5.ORDER_TYPE_BUY else mt5.ORDER_TYPE_BUY
+        tick = mt5.symbol_info_tick(pos.symbol)
+        if not tick:
+            return False
+        price = tick.bid if pos.type == mt5.ORDER_TYPE_BUY else tick.ask
+        sym_info = mt5.symbol_info(pos.symbol)
+        filling_mode = sym_info.filling_mode if sym_info else 0
+        type_filling = mt5.ORDER_FILLING_IOC if (filling_mode & 2) else (mt5.ORDER_FILLING_FOK if (filling_mode & 1) else mt5.ORDER_FILLING_RETURN)
+
+        request = {
+            "action": mt5.TRADE_ACTION_DEAL,
+            "position": pos.ticket,
+            "symbol": pos.symbol,
+            "volume": pos.volume,
+            "type": order_type,
+            "price": price,
+            "deviation": 20,
+            "magic": 999111,
+            "comment": "SparkX_Ticket_Close",
+            "type_time": mt5.ORDER_TIME_GTC,
+            "type_filling": type_filling
+        }
+        res = mt5.order_send(request)
+        if res and res.retcode == mt5.TRADE_RETCODE_DONE:
+            logger.info(f"Successfully closed MT5 position #{ticket} for {pos.symbol} @ {price}")
+            return True
+        else:
+            err = res.retcode if res else mt5.last_error()
+            logger.warning(f"Failed to close position #{ticket}: error code {err}")
+            return False
+
