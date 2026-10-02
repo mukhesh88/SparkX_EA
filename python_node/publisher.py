@@ -207,10 +207,17 @@ class ZMQMarketPublisher:
             )
             logger.info("[TEST ALERT] Dispatched verification ping to Discord/Telegram.")
         elif cmd_type == "EXECUTE" or ("BUY" in action or "SELL" in action):
+            cur_px = self.last_price.get(symbol, 4185.0)
+            open_pos = trade_manager.get_positions(self.ingestion.is_live, cur_px, symbol)
+
+            allowed, reason = trade_manager.can_enter_trade(symbol, action, cur_px, open_pos)
+            if not allowed:
+                logger.warning(f"[GATE REJECTED] Execution blocked for {symbol} {action}: {reason}")
+                return
+
             sl_pts = float(trade_manager.settings.get("sl_points", 4.5))
             tp_pts = float(trade_manager.settings.get("tp_points", 12.0))
             vol = float(trade_manager.settings.get("fixed_lot_size", 0.10))
-            cur_px = self.last_price.get(symbol, 4185.0)
 
             if self.ingestion.is_live:
                 receipt = self.gateway.execute_live_order(
@@ -219,14 +226,14 @@ class ZMQMarketPublisher:
                     sl_points=sl_pts,
                     tp_points=tp_pts,
                     lot_size=vol,
-                    comment="SparkX_GUI_Cmd"
+                    comment="SparkX_Laya_Live"
                 )
             else:
                 is_b = "BUY" in action.upper()
                 sl_p = round(cur_px - sl_pts if is_b else cur_px + sl_pts, 2)
                 tp_p = round(cur_px + tp_pts if is_b else cur_px - tp_pts, 2)
                 sim_ticket = trade_manager.add_simulated_position(
-                    symbol=symbol, action=action, price=cur_px, volume=vol, sl=sl_p, tp=tp_p, comment="SparkX_GUI_Cmd"
+                    symbol=symbol, action=action, price=cur_px, volume=vol, sl=sl_p, tp=tp_p, comment="SparkX_Laya_Sim"
                 )
                 receipt = ExecutionReceipt(
                     executed=True, order_id=sim_ticket, symbol=symbol, action=action,
@@ -236,8 +243,9 @@ class ZMQMarketPublisher:
 
             self.last_receipt = receipt
             if receipt.executed:
+                trade_manager.record_trade_executed(symbol, action, receipt.price)
                 self.last_trade_time = time.time()
-                logger.info(f"[C++ COMMAND EXECUTED] Ticket #{receipt.order_id} {action} {receipt.volume} {symbol} @ {receipt.price}")
+                logger.info(f"[ORDER EXECUTED] Ticket #{receipt.order_id} {action} {receipt.volume} {symbol} @ {receipt.price}")
                 mobile_notifier.send_trade_signal(
                     symbol=symbol,
                     action=action,
@@ -246,7 +254,7 @@ class ZMQMarketPublisher:
                     tp=receipt.tp,
                     score=9.2,
                     confidence=0.94,
-                    reason=f"Manual Operator Command Triggered via C++ GUI ({action})",
+                    reason=f"Laya AI Model Execution ({action})",
                     order_id=receipt.order_id
                 )
 
@@ -278,82 +286,12 @@ class ZMQMarketPublisher:
                 balance = acc_info.balance
                 login = acc_info.login
 
-        # 4. Autonomous Institutional Trade Execution
-        now = time.time()
-        auto_enabled = trade_manager.settings.get("auto_trade_enabled", True)
-        max_positions = trade_manager.settings.get("max_open_positions", 2)
-        sl_pts = float(trade_manager.settings.get("sl_points", 4.5))
-        tp_pts = float(trade_manager.settings.get("tp_points", 12.0))
-        vol = float(trade_manager.settings.get("fixed_lot_size", 0.10))
-        max_spread = float(trade_manager.settings.get("max_spread_points", 25.0))
-
-        if auto_enabled and num_open < max_positions and (now - self.last_trade_time > 30.0):
-            trade_action = None
-            is_discount = features.price_zone == "DISCOUNT"
-            is_premium = features.price_zone == "PREMIUM"
-            is_ssl = features.ssl_swept
-            is_bsl = features.bsl_swept
-            has_bull_fvg = features.active_m5_fvg is not None and features.active_m5_fvg.direction == "BULLISH"
-            has_bear_fvg = features.active_m5_fvg is not None and features.active_m5_fvg.direction == "BEARISH"
-            has_bull_ob = features.active_m5_ob is not None and features.active_m5_ob.direction == "BULLISH"
-            has_bear_ob = features.active_m5_ob is not None and features.active_m5_ob.direction == "BEARISH"
-
-            if (is_discount or is_ssl or has_bull_fvg or has_bull_ob) and spread <= max_spread:
-                trade_action = "MARKET_BUY"
-            elif (is_premium or is_bsl or has_bear_fvg or has_bear_ob) and spread <= max_spread:
-                trade_action = "MARKET_SELL"
-            elif features.h1_trend == "BULLISH" and features.m5_structure in ("BOS_BULLISH", "MSS_BULLISH") and spread <= max_spread:
-                trade_action = "MARKET_BUY"
-            elif features.h1_trend == "BEARISH" and features.m5_structure in ("BOS_BEARISH", "MSS_BEARISH") and spread <= max_spread:
-                trade_action = "MARKET_SELL"
-
-            if trade_action:
-                if self.ingestion.is_live:
-                    receipt = self.gateway.execute_live_order(
-                        symbol=symbol,
-                        action=trade_action,
-                        sl_points=sl_pts,
-                        tp_points=tp_pts,
-                        lot_size=vol,
-                        comment="SparkX_Auto_Live"
-                    )
-                else:
-                    cur_px = features.current_price
-                    is_b = "BUY" in trade_action.upper()
-                    sl_p = round(cur_px - sl_pts if is_b else cur_px + sl_pts, 2)
-                    tp_p = round(cur_px + tp_pts if is_b else cur_px - tp_pts, 2)
-                    sim_ticket = trade_manager.add_simulated_position(
-                        symbol=symbol, action=trade_action, price=cur_px, volume=vol, sl=sl_p, tp=tp_p, comment="SparkX_Auto_Sim"
-                    )
-                    receipt = ExecutionReceipt(
-                        executed=True, order_id=sim_ticket, symbol=symbol, action=trade_action,
-                        price=cur_px, volume=vol, sl=sl_p, tp=tp_p, retcode=10009,
-                        status_message="SUCCESS_SIMULATED_ORDER_FILLED", latency_ms=0.5
-                    )
-
-                self.last_receipt = receipt
-                if receipt.executed:
-                    self.last_trade_time = now
-                    logger.info(
-                        f"*** [ORDER FILLED] *** Ticket #{receipt.order_id} {trade_action} "
-                        f"{receipt.volume} {symbol} @ {receipt.price} | SL: {receipt.sl} | TP: {receipt.tp}"
-                    )
-                    smc_reason = (
-                        f"{features.h1_trend} H1 Trend | {features.m5_structure} M5 Struct | "
-                        f"{features.price_zone} Zone | "
-                        f"{'Active Bullish FVG' if features.active_m5_fvg and features.active_m5_fvg.direction == 'BULLISH' else ('Active Bearish FVG' if features.active_m5_fvg else 'Liquidity Sweep')}"
-                    )
-                    mobile_notifier.send_trade_signal(
-                        symbol=symbol,
-                        action=trade_action,
-                        price=receipt.price,
-                        sl=receipt.sl,
-                        tp=receipt.tp,
-                        score=8.7,
-                        confidence=0.89,
-                        reason=smc_reason,
-                        order_id=receipt.order_id
-                    )
+        # 4. Autonomous Institutional Execution Centralization:
+        # In SparkX architecture, all trade decisions and setup grading are performed by
+        # Laya AI Engine in C++ (with ONNX inference & SMC confluence vetoes).
+        # When Laya qualifies a setup, it dispatches an EXECUTE command via ZMQ to
+        # handle_client_command(), which enforces institutional risk gates (can_enter_trade).
+        # This prevents duplicate execution loops and dual-fire order stacking.
 
         # 5. Compress state into dense token-vector string (< 512 tokens)
         compressed_state = MarketStateCompressor.compress(features)

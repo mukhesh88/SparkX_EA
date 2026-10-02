@@ -235,6 +235,34 @@ LayaOutput LayaONNXEngine::InferPrimitives(const std::string& compressed_market_
     }
 #endif
 
+    // 1. Parse Key Numeric Levels from Compressed State
+    auto extract_val = [](const std::string& str, const std::string& key, char end_delim) -> float {
+        size_t pos = str.find(key);
+        if (pos == std::string::npos) return 0.0f;
+        pos += key.length();
+        size_t end_pos = str.find(end_delim, pos);
+        if (end_pos == std::string::npos) end_pos = str.find_first_of(" \n\r\t'>", pos);
+        std::string val_str = (end_pos != std::string::npos) ? str.substr(pos, end_pos - pos) : str.substr(pos);
+        try {
+            return std::stof(val_str);
+        } catch (...) {
+            return 0.0f;
+        }
+    };
+
+    float cur_px   = extract_val(compressed_market_state, "px='", '\'');
+    float bsl_tgt  = extract_val(compressed_market_state, "BSL_TGT:", '|');
+    float ssl_tgt  = extract_val(compressed_market_state, "SSL_TGT:", '\n');
+    if (ssl_tgt <= 0.0f) ssl_tgt = extract_val(compressed_market_state, "SSL_TGT:", '<');
+
+    float dist_to_bsl = (bsl_tgt > cur_px && cur_px > 0.0f) ? (bsl_tgt - cur_px) : 999.0f;
+    float dist_to_ssl = (cur_px > ssl_tgt && ssl_tgt > 0.0f) ? (cur_px - ssl_tgt) : 999.0f;
+
+    // Target Headroom / Expansion Exhaustion:
+    // If within 5.0 points of target liquidity pool, expansion is exhausted -> VETO new orders in that direction
+    bool bsl_exhausted = (dist_to_bsl < 5.0f);
+    bool ssl_exhausted = (dist_to_ssl < 5.0f);
+
     // High-fidelity calibrated ModernBERT execution & SMC confluence engine
     bool is_discount = compressed_market_state.find("ZONE:DISCOUNT") != std::string::npos;
     bool is_premium  = compressed_market_state.find("ZONE:PREMIUM") != std::string::npos;
@@ -251,66 +279,82 @@ LayaOutput LayaONNXEngine::InferPrimitives(const std::string& compressed_market_
     bool m5_bull     = compressed_market_state.find("M5:MSS_BULLISH") != std::string::npos || compressed_market_state.find("M5:BOS_BULLISH") != std::string::npos;
     bool m5_bear     = compressed_market_state.find("M5:MSS_BEARISH") != std::string::npos || compressed_market_state.find("M5:BOS_BEARISH") != std::string::npos;
 
+    // Institutional Trader Discipline:
+    // 1. Value Law: Never buy in Premium; never sell in Discount.
+    // 2. Headroom: Target must not be exhausted (<5 pts to target blocks entries).
+    // 3. Trigger: Must have an active catalyst (Sweep or Displacement on fresh FVG/OB).
+    bool buy_vetoed = is_premium || bsl_exhausted || !(ssl_swept || (disp && (bull_fvg || bull_ob)));
+    bool sell_vetoed = is_discount || ssl_exhausted || !(bsl_swept || (disp && (bear_fvg || bear_ob)));
+
     int bull_score = 0;
-    if (is_discount) bull_score += 2;
-    if (ssl_swept)   bull_score += 3;
-    if (h1_bull)     bull_score += 2;
-    if (m5_bull)     bull_score += 1;
-    if (bull_fvg)    bull_score += 2;
-    if (bull_ob)     bull_score += 2;
-    if (disp)        bull_score += 2;
-    if (vol_exp)     bull_score += 1;
-
-    int bear_score = 0;
-    if (is_premium)  bear_score += 2;
-    if (bsl_swept)   bear_score += 3;
-    if (h1_bear)     bear_score += 2;
-    if (m5_bear)     bear_score += 1;
-    if (bear_fvg)    bear_score += 2;
-    if (bear_ob)     bear_score += 2;
-    if (disp)        bear_score += 2;
-    if (vol_exp)     bear_score += 1;
-
-    // Condition logits with SMC Confluence Engine
-    if (choice_logits.size() < 5) {
-        choice_logits = { -2.0f, -2.0f, -1.0f, -1.0f, 4.5f };
+    if (!buy_vetoed) {
+        if (is_discount) bull_score += 2;
+        if (ssl_swept)   bull_score += 3;
+        if (disp)        bull_score += 2;
+        if (bull_fvg || bull_ob) bull_score += 2;
+        if (h1_bull)     bull_score += 2;
+        if (m5_bull)     bull_score += 1;
+        if (vol_exp)     bull_score += 1;
+        if (dist_to_bsl >= 10.0f) bull_score += 1;
+    } else {
+        bull_score = -10;
     }
 
-    if (bull_score >= 6) {
-        if (bull_ob && !ssl_swept) {
-            choice_logits[0] += 2.0f + bull_score * 0.2f;
-            choice_logits[1] -= 5.0f;
-            choice_logits[2] += 5.5f + bull_score * 0.4f;
-            choice_logits[3] -= 5.0f;
-            choice_logits[4] -= 3.5f;
-        } else {
-            choice_logits[0] += 5.5f + bull_score * 0.45f;
-            choice_logits[1] -= 5.0f;
-            choice_logits[2] += 2.5f;
-            choice_logits[3] -= 5.0f;
-            choice_logits[4] -= 3.5f;
-        }
-    } else if (bear_score >= 6) {
-        if (bear_ob && !bsl_swept) {
-            choice_logits[0] -= 5.0f;
-            choice_logits[1] += 2.0f + bear_score * 0.2f;
-            choice_logits[2] -= 5.0f;
-            choice_logits[3] += 5.5f + bear_score * 0.4f;
-            choice_logits[4] -= 3.5f;
-        } else {
-            choice_logits[0] -= 5.0f;
-            choice_logits[1] += 5.5f + bear_score * 0.45f;
-            choice_logits[2] -= 5.0f;
-            choice_logits[3] += 2.5f;
-            choice_logits[4] -= 3.5f;
-        }
+    int bear_score = 0;
+    if (!sell_vetoed) {
+        if (is_premium)  bear_score += 2;
+        if (bsl_swept)   bear_score += 3;
+        if (disp)        bear_score += 2;
+        if (bear_fvg || bear_ob) bear_score += 2;
+        if (h1_bear)     bear_score += 2;
+        if (m5_bear)     bear_score += 1;
+        if (vol_exp)     bear_score += 1;
+        if (dist_to_ssl >= 10.0f) bear_score += 1;
     } else {
-        // Range / Equilibrium / Consolidation: HOLD dominates
-        choice_logits[4] += 3.5f + (6 - std::max(bull_score, bear_score)) * 0.5f;
-        choice_logits[0] += (bull_score - bear_score) * 0.4f - 1.0f;
-        choice_logits[1] += (bear_score - bull_score) * 0.4f - 1.0f;
-        choice_logits[2] += (bull_ob ? 1.0f : -2.0f);
-        choice_logits[3] += (bear_ob ? 1.0f : -2.0f);
+        bear_score = -10;
+    }
+
+    // Condition logits with SMC Institutional Trader Engine
+    if (choice_logits.size() < 5) {
+        choice_logits = { -3.0f, -3.0f, -2.0f, -2.0f, 5.0f };
+    }
+
+    // Reset baselines favoring HOLD in the absence of institutional setups
+    choice_logits[0] = -3.0f; // BUY
+    choice_logits[1] = -3.0f; // SELL
+    choice_logits[2] = -2.0f; // LIMIT_BUY_OB
+    choice_logits[3] = -2.0f; // LIMIT_SELL_OB
+    choice_logits[4] = 4.5f;  // HOLD
+
+    float setup_grade = 3.5f;
+
+    if (bull_score >= 8 && !buy_vetoed) {
+        if (bull_ob && !ssl_swept && !disp) {
+            choice_logits[2] = 5.5f + (bull_score - 8) * 0.5f;
+            choice_logits[0] = 1.0f;
+            choice_logits[4] = -1.0f;
+        } else {
+            choice_logits[0] = 6.0f + (bull_score - 8) * 0.5f;
+            choice_logits[2] = 2.0f;
+            choice_logits[4] = -2.0f;
+        }
+        setup_grade = std::min(10.0f, 7.5f + (bull_score - 8) * 0.45f);
+    } else if (bear_score >= 8 && !sell_vetoed) {
+        if (bear_ob && !bsl_swept && !disp) {
+            choice_logits[3] = 5.5f + (bear_score - 8) * 0.5f;
+            choice_logits[1] = 1.0f;
+            choice_logits[4] = -1.0f;
+        } else {
+            choice_logits[1] = 6.0f + (bear_score - 8) * 0.5f;
+            choice_logits[3] = 2.0f;
+            choice_logits[4] = -2.0f;
+        }
+        setup_grade = std::min(10.0f, 7.5f + (bear_score - 8) * 0.45f);
+    } else {
+        // HOLD dominates - patient trader waits for valid institutional setup
+        choice_logits[4] = 5.5f;
+        int partial = std::max(0, std::max(bull_score, bear_score));
+        setup_grade = std::min(5.8f, 3.0f + partial * 0.4f);
     }
 
     std::vector<std::string> choice_labels = {
@@ -326,19 +370,10 @@ LayaOutput LayaONNXEngine::InferPrimitives(const std::string& compressed_market_
     }
 
     // Score Primitive
-    int alignment_count = 0;
-    if (is_discount || is_premium) alignment_count++;
-    if (ssl_swept || bsl_swept)    alignment_count++;
-    if (h1_bull || h1_bear)        alignment_count++;
-    if (bull_fvg || bear_fvg)      alignment_count++;
-    if (disp)                      alignment_count++;
-    if (vol_exp)                   alignment_count++;
-
-    float target_grade = std::min(10.0f, std::max(1.5f, alignment_count * 1.5f + 0.8f));
     if (has_score_raw && onnx_score_raw > 0.0f) {
-        out.score_grade = std::min(10.0f, std::max(1.0f, 0.25f * onnx_score_raw + 0.75f * target_grade));
+        out.score_grade = std::min(10.0f, std::max(1.0f, 0.20f * onnx_score_raw + 0.80f * setup_grade));
     } else {
-        out.score_grade = target_grade;
+        out.score_grade = setup_grade;
     }
     out.score_top_grade = std::min(10, std::max(1, static_cast<int>(std::round(out.score_grade))));
 
@@ -358,20 +393,28 @@ LayaOutput LayaONNXEngine::InferPrimitives(const std::string& compressed_market_
         p_asian >= 0.70f
     });
 
-    float p_fvg = Sigmoid((bull_fvg || bear_fvg) ? 3.2f : -3.2f);
+    float p_val = Sigmoid(((is_discount && !buy_vetoed) || (is_premium && !sell_vetoed)) ? 3.2f : -3.2f);
     out.noul_checks.push_back({
-        "M5 Fair Value Gap Valid & Fresh",
-        p_fvg,
-        1.0f - p_fvg,
-        p_fvg >= 0.70f
+        "PD Dealing Range Value Zone (No Premium Long / Discount Short)",
+        p_val,
+        1.0f - p_val,
+        p_val >= 0.70f
     });
 
-    float p_mss = Sigmoid(disp ? 3.0f : -2.8f);
+    float p_head = Sigmoid((!bsl_exhausted && !ssl_exhausted) ? 3.0f : -3.0f);
     out.noul_checks.push_back({
-        "MSS Confirmed with Displacement",
-        p_mss,
-        1.0f - p_mss,
-        p_mss >= 0.70f
+        "Target Headroom Available (Runway >= 5.0 pts)",
+        p_head,
+        1.0f - p_head,
+        p_head >= 0.70f
+    });
+
+    float p_trig = Sigmoid((ssl_swept || bsl_swept || (disp && (bull_fvg || bear_fvg || bull_ob || bear_ob))) ? 3.2f : -3.2f);
+    out.noul_checks.push_back({
+        "Active Institutional Trigger (Sweep or Disp FVG/OB)",
+        p_trig,
+        1.0f - p_trig,
+        p_trig >= 0.70f
     });
 
     auto t_end = std::chrono::high_resolution_clock::now();

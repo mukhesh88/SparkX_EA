@@ -293,18 +293,39 @@ void ZMQListenerWorker::ProcessMessagePayload(const std::string& json_payload, i
         frame.laya_decision = onnx_.InferPrimitives(frame.compressed_state);
 
         // Check if trade action triggered
-        if (frame.laya_decision.choice_action != "HOLD" && frame.laya_decision.choice_confidence >= 0.85f && frame.laya_decision.score_grade >= 7.0f) {
-            std::stringstream ss;
-            ss << "[EXECUTION GATE PASSED] " << frame.symbol << " " << frame.laya_decision.choice_action
-               << " (" << (int)(frame.laya_decision.choice_confidence * 100) << "%) | Setup Grade: "
-               << frame.laya_decision.score_grade << "/10.0 | Latency: "
-               << frame.laya_decision.inference_latency_ms << "ms";
-            state_.AddLog("EXEC", ss.str());
+        if (frame.laya_decision.choice_action != "HOLD" &&
+            frame.laya_decision.choice_confidence >= 0.85f &&
+            frame.laya_decision.score_grade >= 7.5f) {
 
-            // If terminal is ARMED, dispatch execution command to Python MT5 Gateway
-            if (state_.GetEngineState() == EngineState::ARMED && sock >= 0) {
-                std::string cmd = "{\"command\":\"EXECUTE\",\"symbol\":\"" + frame.symbol + "\",\"action\":\"" + frame.laya_decision.choice_action + "\"}\n";
-                send(sock, cmd.c_str(), (int)cmd.size(), 0);
+            // Check if position already exists for this symbol (strictly prevent duplicate stacking)
+            bool already_open = false;
+            for (const auto& pos : state_.GetPositions()) {
+                if (pos.symbol == frame.symbol) {
+                    already_open = true;
+                    break;
+                }
+            }
+
+            // Institutional Spacing Latch: minimum 300 seconds (5 minutes) between automated dispatches
+            static std::chrono::steady_clock::time_point last_dispatch_time =
+                std::chrono::steady_clock::now() - std::chrono::seconds(600);
+            auto now_time = std::chrono::steady_clock::now();
+            auto elapsed_sec = std::chrono::duration_cast<std::chrono::seconds>(now_time - last_dispatch_time).count();
+
+            if (!already_open && elapsed_sec >= 300) {
+                last_dispatch_time = now_time;
+                std::stringstream ss;
+                ss << "[EXECUTION GATE PASSED] " << frame.symbol << " " << frame.laya_decision.choice_action
+                   << " (" << (int)(frame.laya_decision.choice_confidence * 100) << "%) | Setup Grade: "
+                   << frame.laya_decision.score_grade << "/10.0 | Latency: "
+                   << frame.laya_decision.inference_latency_ms << "ms";
+                state_.AddLog("EXEC", ss.str());
+
+                // If terminal is ARMED, dispatch execution command to Python MT5 Gateway
+                if (state_.GetEngineState() == EngineState::ARMED && sock >= 0) {
+                    std::string cmd = "{\"command\":\"EXECUTE\",\"symbol\":\"" + frame.symbol + "\",\"action\":\"" + frame.laya_decision.choice_action + "\"}\n";
+                    send(sock, cmd.c_str(), (int)cmd.size(), 0);
+                }
             }
         }
     } else {

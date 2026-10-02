@@ -33,6 +33,12 @@ class TradeManager:
         self.simulated_positions: List[Dict[str, Any]] = []
         self.history: List[Dict[str, Any]] = self._load_history()
         self._next_sim_ticket = 70001000
+        self.last_trade_time: float = 0.0
+        self.last_closed_action: str = ""
+        self.last_closed_outcome: str = ""
+        self.last_closed_time: float = 0.0
+        self.last_closed_price: float = 0.0
+        self.last_closed_symbol: str = ""
 
     def _load_settings(self) -> Dict[str, Any]:
         defaults = {
@@ -118,8 +124,14 @@ class TradeManager:
             "comment": comment
         }
         self.simulated_positions.append(pos)
+        self.last_trade_time = time.time()
         logger.info(f"Added simulated position #{ticket} {action} {volume} {symbol} @ {price}")
         return ticket
+
+    def record_trade_executed(self, symbol: str, action: str, price: float):
+        """Records the timestamp and attributes of an executed trade."""
+        self.last_trade_time = time.time()
+        logger.info(f"Institutional Trade Latched: {symbol} {action} @ ${price:.2f} at {self.last_trade_time}")
 
     def close_simulated_position(self, ticket: int, current_price: float) -> Optional[Dict[str, Any]]:
         target_idx = -1
@@ -151,8 +163,79 @@ class TradeManager:
         }
         self.history.insert(0, hist_item)
         self._save_history()
-        logger.info(f"Closed simulated position #{ticket} @ ${current_price:.2f} | PnL: ${pnl:.2f}")
+
+        # Update Institutional Trade Lifecycle telemetry
+        self.last_closed_action = pos["type"]
+        self.last_closed_outcome = hist_item["outcome"]
+        self.last_closed_time = time.time()
+        self.last_closed_price = float(current_price)
+        self.last_closed_symbol = pos["symbol"]
+
+        logger.info(f"Closed simulated position #{ticket} @ ${current_price:.2f} | PnL: ${pnl:.2f} ({hist_item['outcome']})")
         return hist_item
+
+    def can_enter_trade(self, symbol: str, action: str, price: float, open_positions: List[Dict[str, Any]]) -> Tuple[bool, str]:
+        """
+        Institutional Risk & Anti-Chasing Gate:
+        Enforces professional discipline:
+          1. Maximum 1 active position per symbol (no duplicate stacking).
+          2. Minimum 180s setup spacing cooldown.
+          3. Post-TP Anti-Chasing Hysteresis (blocks buying the top after TP).
+          4. Post-SL Anti-Revenge Lockout (15-min cooldown after stop-loss).
+        """
+        now = time.time()
+        act_upper = "BUY" if "BUY" in action.upper() else "SELL"
+
+        # 1. Check auto trade setting
+        if not self.settings.get("auto_trade_enabled", True):
+            return False, "Auto-trading is disabled in settings"
+
+        # 2. Maximum 1 active position per symbol (strictly eliminates duplicate orders)
+        symbol_pos = [p for p in open_positions if p.get("symbol") == symbol]
+        if len(symbol_pos) >= 1:
+            ticket = symbol_pos[0].get('ticket', 'N/A')
+            return False, f"Position already active for {symbol} (Ticket #{ticket}). Max allowed: 1 per symbol."
+
+        max_allowed = int(self.settings.get("max_open_positions", 2))
+        if len(open_positions) >= max_allowed:
+            return False, f"Maximum total portfolio positions reached ({len(open_positions)}/{max_allowed})"
+
+        # 3. Minimum setup spacing cooldown (minimum 180 seconds / 3 mins)
+        if (now - self.last_trade_time) < 180.0:
+            remaining = int(180.0 - (now - self.last_trade_time))
+            return False, f"Trade pacing cooldown active ({remaining}s remaining before next setup)"
+
+        # 4. Post-TP Anti-Chasing Hysteresis (Never buy the high where TP was just filled!)
+        if self.last_closed_symbol == symbol and self.last_closed_outcome == "WIN":
+            elapsed = now - self.last_closed_time
+            if elapsed < 600.0:  # 10 minutes lockout after TP
+                if act_upper == "BUY" and self.last_closed_action == "BUY":
+                    # Must retrace at least 5.0 points below the TP exit
+                    pullback_dist = self.last_closed_price - price
+                    if pullback_dist < 5.0:
+                        return False, (
+                            f"Post-TP Anti-Chasing Lockout: Price (${price:.2f}) has not retraced "
+                            f"at least $5.00 below recent TP exit (${self.last_closed_price:.2f}). "
+                            f"Pullback so far: ${pullback_dist:.2f}. Waiting for market retracement."
+                        )
+                elif act_upper == "SELL" and self.last_closed_action == "SELL":
+                    # Must retrace at least 5.0 points above the TP exit
+                    pullback_dist = price - self.last_closed_price
+                    if pullback_dist < 5.0:
+                        return False, (
+                            f"Post-TP Anti-Chasing Lockout: Price (${price:.2f}) has not retraced "
+                            f"at least $5.00 above recent TP exit (${self.last_closed_price:.2f}). "
+                            f"Pullback so far: ${pullback_dist:.2f}. Waiting for market retracement."
+                        )
+
+        # 5. Post-SL Anti-Revenge Lockout (15 minutes after Stop-Loss in same direction)
+        if self.last_closed_symbol == symbol and self.last_closed_outcome == "LOSS":
+            elapsed = now - self.last_closed_time
+            if elapsed < 900.0 and self.last_closed_action == act_upper:
+                remaining = int(900.0 - elapsed)
+                return False, f"Post-SL Anti-Revenge Lockout: 15-min cooldown active after {act_upper} loss ({remaining}s remaining)"
+
+        return True, "PASSED"
 
     def get_positions(self, is_live_broker: bool, current_price: float, symbol: str = "XAUUSD") -> List[Dict[str, Any]]:
         """Returns live active positions from MT5 or the simulated tracker."""
