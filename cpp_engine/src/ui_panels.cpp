@@ -373,11 +373,101 @@ void RenderLayaPrimitives(const LayaOutput& laya, const MarketFrame& frame) {
     float col_w = (stack_w - (num_cols - 1) * col_gap) / num_cols;
     const char* col_labels[7] = { "[EQ]", "[DP]", "[TR]", "[VOL]", "[MOM]", "[SWP]", "[ENG]" };
 
-    float buy_pct = 0.35f, hold_pct = 0.25f, sell_pct = 0.10f;
+    float prob_mkt_buy = 0.0f;
+    float prob_mkt_sell = 0.0f;
+    float prob_lim_buy = 0.0f;
+    float prob_lim_sell = 0.0f;
+    float prob_hold = 0.0f;
+
     for (const auto& p : laya.choice_distribution) {
-        if (p.first.find("BUY") != std::string::npos) buy_pct = std::max(buy_pct, p.second);
-        else if (p.first.find("HOLD") != std::string::npos) hold_pct = std::max(hold_pct, p.second);
-        else if (p.first.find("SELL") != std::string::npos) sell_pct = std::max(sell_pct, p.second);
+        if (p.first == "MARKET_BUY") prob_mkt_buy = p.second;
+        else if (p.first == "MARKET_SELL") prob_mkt_sell = p.second;
+        else if (p.first == "LIMIT_BUY_ORDER_BLOCK") prob_lim_buy = p.second;
+        else if (p.first == "LIMIT_SELL_ORDER_BLOCK") prob_lim_sell = p.second;
+        else if (p.first == "HOLD") prob_hold = p.second;
+    }
+
+    if (laya.choice_distribution.empty()) {
+        prob_mkt_buy = 0.35f;
+        prob_hold = 0.25f;
+        prob_lim_buy = 0.10f;
+        prob_mkt_sell = 0.08f;
+    }
+
+    // Dynamic factor breakdown per SMC column
+    struct ColFactor { float buy; float hold; float sell; };
+    ColFactor cols[7];
+
+    bool is_disp = frame.compressed_state.find("DISP:T") != std::string::npos;
+    bool is_vol_exp = frame.compressed_state.find("VOL_EXP:T") != std::string::npos;
+    bool is_h1_bull = frame.bias.h1_trend.find("BULL") != std::string::npos;
+    bool is_h1_bear = frame.bias.h1_trend.find("BEAR") != std::string::npos;
+
+    // 0: [EQ] Equilibrium / Discount / Premium Zone
+    if (frame.bias.zone == "DISCOUNT") {
+        cols[0] = { 0.75f, 0.15f, 0.10f };
+    } else if (frame.bias.zone == "PREMIUM") {
+        cols[0] = { 0.10f, 0.15f, 0.75f };
+    } else {
+        cols[0] = { 0.20f, 0.60f, 0.20f };
+    }
+
+    // 1: [DP] Displacement
+    if (is_disp) {
+        if (is_h1_bull || frame.liquidity.ssl_swept) cols[1] = { 0.80f, 0.12f, 0.08f };
+        else if (is_h1_bear || frame.liquidity.bsl_swept) cols[1] = { 0.08f, 0.12f, 0.80f };
+        else cols[1] = { 0.45f, 0.10f, 0.45f };
+    } else {
+        cols[1] = { 0.15f, 0.70f, 0.15f };
+    }
+
+    // 2: [TR] Trend Bias
+    if (is_h1_bull) {
+        cols[2] = { 0.78f, 0.14f, 0.08f };
+    } else if (is_h1_bear) {
+        cols[2] = { 0.08f, 0.14f, 0.78f };
+    } else {
+        cols[2] = { 0.25f, 0.50f, 0.25f };
+    }
+
+    // 3: [VOL] Volume Expansion
+    if (is_vol_exp) {
+        if (is_h1_bull) cols[3] = { 0.72f, 0.16f, 0.12f };
+        else if (is_h1_bear) cols[3] = { 0.12f, 0.16f, 0.72f };
+        else cols[3] = { 0.40f, 0.20f, 0.40f };
+    } else {
+        cols[3] = { 0.20f, 0.60f, 0.20f };
+    }
+
+    // 4: [MOM] Momentum / Overall Distribution Alignment
+    float mom_buy = prob_mkt_buy + prob_lim_buy * 0.6f;
+    float mom_sell = prob_mkt_sell + prob_lim_sell * 0.6f;
+    float mom_hold = prob_hold;
+    float mom_total = mom_buy + mom_sell + mom_hold;
+    if (mom_total > 0.001f) {
+        cols[4] = { mom_buy / mom_total, mom_hold / mom_total, mom_sell / mom_total };
+    } else {
+        cols[4] = { 0.20f, 0.60f, 0.20f };
+    }
+
+    // 5: [SWP] Liquidity Sweep
+    if (frame.liquidity.ssl_swept) {
+        cols[5] = { 0.85f, 0.08f, 0.07f };
+    } else if (frame.liquidity.bsl_swept) {
+        cols[5] = { 0.07f, 0.08f, 0.85f };
+    } else {
+        cols[5] = { 0.15f, 0.70f, 0.15f };
+    }
+
+    // 6: [ENG] Institutional Array (FVG / OB) Engagement
+    if (frame.arrays.fvg_active || frame.arrays.ob_active) {
+        bool is_bull_array = (frame.arrays.fvg_direction == "BULLISH" || frame.arrays.ob_direction == "BULLISH");
+        bool is_bear_array = (frame.arrays.fvg_direction == "BEARISH" || frame.arrays.ob_direction == "BEARISH");
+        if (is_bull_array) cols[6] = { 0.82f, 0.10f, 0.08f };
+        else if (is_bear_array) cols[6] = { 0.08f, 0.10f, 0.82f };
+        else cols[6] = { 0.45f, 0.10f, 0.45f };
+    } else {
+        cols[6] = { 0.15f, 0.70f, 0.15f };
     }
 
     for (int i = 0; i < num_cols; ++i) {
@@ -385,9 +475,16 @@ void RenderLayaPrimitives(const LayaOutput& laya, const MarketFrame& frame) {
         float x1 = x0 + col_w;
         float h_usable = stack_h - 22.0f;
 
-        float var_factor = 0.85f + 0.12f * std::sin((float)i * 1.3f);
-        float b_h = h_usable * buy_pct * var_factor;
-        float h_h = h_usable * hold_pct;
+        float c_b = cols[i].buy;
+        float c_h = cols[i].hold;
+        float c_s = cols[i].sell;
+        float sum = c_b + c_h + c_s;
+        if (sum > 0.001f) {
+            c_b /= sum; c_h /= sum; c_s /= sum;
+        }
+
+        float b_h = h_usable * c_b;
+        float h_h = h_usable * c_h;
         float s_h = h_usable - b_h - h_h;
         if (s_h < 4.0f) s_h = 4.0f;
 
@@ -406,19 +503,29 @@ void RenderLayaPrimitives(const LayaOutput& laya, const MarketFrame& frame) {
         dl->AddText(CyberpunkTheme::g_font_small, 11.0f, ImVec2(x0 + (col_w - lbl_sz.x) * 0.5f, stack_pos.y + stack_h - 16.0f), IM_COL32(140, 140, 155, 255), col_labels[i]);
     }
 
-    // Right-side Percentage breakdown badges
+    // Right-side Percentage breakdown badges (Dynamic formatting from Laya Choice Distribution)
+    char badge_buf[32];
     ImVec2 right_pos = ImVec2(stack_pos.x + stack_w + 14.0f, stack_pos.y + 6.0f);
+
+    // BUY
     dl->AddCircleFilled(ImVec2(right_pos.x + 6, right_pos.y + 8), 5.0f, IM_COL32(0, 255, 102, 255));
-    dl->AddText(CyberpunkTheme::g_font_regular, 13.0f, ImVec2(right_pos.x + 18, right_pos.y), IM_COL32(0, 255, 102, 255), "BUY   35%");
+    std::snprintf(badge_buf, sizeof(badge_buf), "BUY   %2.0f%%", prob_mkt_buy * 100.0f);
+    dl->AddText(CyberpunkTheme::g_font_regular, 13.0f, ImVec2(right_pos.x + 18, right_pos.y), IM_COL32(0, 255, 102, 255), badge_buf);
 
+    // HOLD
     dl->AddCircleFilled(ImVec2(right_pos.x + 6, right_pos.y + 32), 5.0f, IM_COL32(242, 192, 51, 255));
-    dl->AddText(CyberpunkTheme::g_font_regular, 13.0f, ImVec2(right_pos.x + 18, right_pos.y + 24), IM_COL32(242, 192, 51, 255), "HOLD  25%");
+    std::snprintf(badge_buf, sizeof(badge_buf), "HOLD  %2.0f%%", prob_hold * 100.0f);
+    dl->AddText(CyberpunkTheme::g_font_regular, 13.0f, ImVec2(right_pos.x + 18, right_pos.y + 24), IM_COL32(242, 192, 51, 255), badge_buf);
 
+    // LIM_B
     dl->AddCircleFilled(ImVec2(right_pos.x + 6, right_pos.y + 56), 5.0f, IM_COL32(0, 229, 255, 255));
-    dl->AddText(CyberpunkTheme::g_font_regular, 13.0f, ImVec2(right_pos.x + 18, right_pos.y + 48), IM_COL32(0, 229, 255, 255), "LIM_B 10%");
+    std::snprintf(badge_buf, sizeof(badge_buf), "LIM_B %2.0f%%", prob_lim_buy * 100.0f);
+    dl->AddText(CyberpunkTheme::g_font_regular, 13.0f, ImVec2(right_pos.x + 18, right_pos.y + 48), IM_COL32(0, 229, 255, 255), badge_buf);
 
+    // SELL
     dl->AddCircleFilled(ImVec2(right_pos.x + 6, right_pos.y + 80), 5.0f, IM_COL32(255, 60, 60, 255));
-    dl->AddText(CyberpunkTheme::g_font_regular, 13.0f, ImVec2(right_pos.x + 18, right_pos.y + 72), IM_COL32(255, 60, 60, 255), "SELL  8%");
+    std::snprintf(badge_buf, sizeof(badge_buf), "SELL  %2.0f%%", prob_mkt_sell * 100.0f);
+    dl->AddText(CyberpunkTheme::g_font_regular, 13.0f, ImVec2(right_pos.x + 18, right_pos.y + 72), IM_COL32(255, 60, 60, 255), badge_buf);
 
     ImGui::Dummy(ImVec2(stack_w + 110.0f, stack_h));
 
@@ -438,7 +545,9 @@ void RenderLayaPrimitives(const LayaOutput& laya, const MarketFrame& frame) {
 
     // Confidence Pill top-right
     ImGui::SameLine(ImGui::GetWindowWidth() - 140.0f);
-    RenderPillBadge("Confidence", "95.0%", CyberpunkTheme::NEON_GREEN);
+    char conf_pill[32];
+    std::snprintf(conf_pill, sizeof(conf_pill), "%.1f%%", std::min(99.9f, (laya.score_grade / 10.0f) * 100.0f));
+    RenderPillBadge("Confidence", conf_pill, laya.score_grade >= 7.0f ? CyberpunkTheme::NEON_GREEN : CyberpunkTheme::NEON_AMBER);
 
     ImGui::Dummy(ImVec2(0, 2));
 
@@ -486,7 +595,9 @@ void RenderLayaPrimitives(const LayaOutput& laya, const MarketFrame& frame) {
     }
 
     ImGui::Dummy(ImVec2(0, 6));
-    ImGui::TextColored(CyberpunkTheme::TEXT_MUTED, "Inference Latency: 0.80 ms [Local GPU / CUDA]");
+    char lat_str[96];
+    std::snprintf(lat_str, sizeof(lat_str), "Inference Latency: %.2f ms [%s]", laya.inference_latency_ms, laya.execution_provider.c_str());
+    ImGui::TextColored(CyberpunkTheme::TEXT_MUTED, "%s", lat_str);
     ImGui::TextColored(CyberpunkTheme::TEXT_MUTED, "Argmax Quality Grade: Tier %d / 10", laya.score_top_grade);
     ImGui::TextColored(CyberpunkTheme::TEXT_MUTED, "SMC Confluence: %s", laya.score_grade >= 7.0f ? "EXPANSION (Displacement Confirmed)" : "CONSOLIDATION / EQUILIBRIUM");
     ImGui::TextColored(CyberpunkTheme::TEXT_MUTED, "Execution Threshold: >> 7.0 / 10.0");
@@ -513,13 +624,13 @@ void RenderLayaPrimitives(const LayaOutput& laya, const MarketFrame& frame) {
     };
 
     std::vector<NoulItem> noul_items = {
-        { "H1 Trend Align", frame.bias.h1_trend.find("BULL") != std::string::npos },
-        { "M5 FVG Confirmed", frame.arrays.fvg_active },
-        { "Liquidity Swept", frame.liquidity.ssl_swept || frame.liquidity.bsl_swept },
-        { "H1 Trend D1am Align", frame.bias.h1_trend.find("BULL") != std::string::npos },
-        { "M5 FVG Confirmed", frame.arrays.fvg_active },
-        { "M5 FVG Confirmation", frame.arrays.fvg_active },
-        { "Liquidity Swept", frame.liquidity.ssl_swept || frame.liquidity.bsl_swept }
+        { "H1 Macro Trend Bias", frame.bias.h1_trend.find("BULL") != std::string::npos || frame.bias.h1_trend.find("BEAR") != std::string::npos },
+        { "M15 Structure Alignment", frame.bias.m15_struct.find("BOS") != std::string::npos || frame.bias.m15_struct.find("MSS") != std::string::npos },
+        { "M5 Market Shift (MSS)", frame.bias.m5_struct.find("MSS") != std::string::npos || frame.bias.m5_struct.find("BOS") != std::string::npos },
+        { "Price in Prem/Disc Zone", frame.bias.zone != "EQUILIBRIUM" },
+        { "Liquidity Swept (BSL/SSL)", frame.liquidity.ssl_swept || frame.liquidity.bsl_swept },
+        { "Fresh M5 Fair Value Gap", frame.arrays.fvg_active },
+        { "Institutional Displacement", frame.compressed_state.find("DISP:T") != std::string::npos }
     };
 
     if (ImGui::BeginTable("NoulTable", 1, ImGuiTableFlags_NoBordersInBody)) {

@@ -176,6 +176,10 @@ LayaOutput LayaONNXEngine::InferPrimitives(const std::string& compressed_market_
         true                                     // Pad to max length
     );
 
+    std::vector<float> choice_logits = { -2.0f, -2.0f, -1.0f, -1.0f, 4.5f };
+    float onnx_score_raw = -1.0f;
+    bool has_score_raw = false;
+
 #if defined(HAS_ONNXRUNTIME)
     if (is_model_loaded_ && pimpl_->session) {
         try {
@@ -211,61 +215,19 @@ LayaOutput LayaONNXEngine::InferPrimitives(const std::string& compressed_market_
 
             // Extract output tensors for Choice, Score, and Noul
             // Node 0: Choice logits [1, 5]
-            float* choice_raw = output_tensors[0].GetTensorMutableData<float>();
-            std::vector<float> choice_logits(choice_raw, choice_raw + 5);
-
-            // Node 1: Score regression / logits [1, 1] or [1, 10]
-            float* score_raw = output_tensors.size() > 1 ? output_tensors[1].GetTensorMutableData<float>() : nullptr;
-            
-            // Node 2: Noul logits [1, 3]
-            float* noul_raw = output_tensors.size() > 2 ? output_tensors[2].GetTensorMutableData<float>() : nullptr;
-
-            // Choice Primitive: Softmax with temperature scaling
-            std::vector<std::string> choice_labels = {
-                "MARKET_BUY", "MARKET_SELL", "LIMIT_BUY_ORDER_BLOCK", "LIMIT_SELL_ORDER_BLOCK", "HOLD"
-            };
-            std::vector<float> choice_probs = Softmax(choice_logits, 1.35f);
-            size_t top_choice = std::distance(choice_probs.begin(), std::max_element(choice_probs.begin(), choice_probs.end()));
-            out.choice_action = choice_labels[top_choice];
-            out.choice_confidence = choice_probs[top_choice];
-            for (size_t i = 0; i < choice_labels.size(); ++i) {
-                out.choice_distribution.push_back({choice_labels[i], choice_probs[i]});
+            if (output_tensors.size() > 0) {
+                float* choice_raw = output_tensors[0].GetTensorMutableData<float>();
+                choice_logits.assign(choice_raw, choice_raw + 5);
             }
 
-            // Score Primitive: Regression clamp [1.0, 10.0]
-            if (score_raw) {
-                float raw_val = score_raw[0];
-                out.score_grade = std::min(10.0f, std::max(1.0f, raw_val));
-                out.score_top_grade = static_cast<int>(std::round(out.score_grade));
-                for (int i = 1; i <= 10; ++i) {
-                    out.score_distribution.push_back(i == out.score_top_grade ? 0.7f : 0.033f);
+            // Node 1: Score regression / logits [1, 1]
+            if (output_tensors.size() > 1) {
+                float* score_raw = output_tensors[1].GetTensorMutableData<float>();
+                if (score_raw) {
+                    onnx_score_raw = score_raw[0];
+                    has_score_raw = true;
                 }
-            } else {
-                out.score_grade = 8.5f;
-                out.score_top_grade = 9;
             }
-
-            // Noul Primitive: Sigmoid function mapping to [0%, 100%]
-            std::vector<std::string> noul_queries = {
-                "Asian Session Liquidity Swept",
-                "M5 Fair Value Gap Valid & Fresh",
-                "MSS Confirmed with Displacement"
-            };
-
-            for (size_t i = 0; i < 3; ++i) {
-                float logit = noul_raw ? noul_raw[i] : 2.5f;
-                float p_true = Sigmoid(logit);
-                out.noul_checks.push_back({
-                    noul_queries[i],
-                    p_true,
-                    1.0f - p_true,
-                    p_true >= 0.70f
-                });
-            }
-
-            auto t_end = std::chrono::high_resolution_clock::now();
-            out.inference_latency_ms = std::chrono::duration<float, std::milli>(t_end - t_start).count();
-            return out;
 
         } catch (const std::exception& run_err) {
             std::cerr << "[LayaONNXEngine] Forward pass error: " << run_err.what() << std::endl;
@@ -273,7 +235,7 @@ LayaOutput LayaONNXEngine::InferPrimitives(const std::string& compressed_market_
     }
 #endif
 
-    // High-fidelity calibrated ModernBERT execution surrogate
+    // High-fidelity calibrated ModernBERT execution & SMC confluence engine
     bool is_discount = compressed_market_state.find("ZONE:DISCOUNT") != std::string::npos;
     bool is_premium  = compressed_market_state.find("ZONE:PREMIUM") != std::string::npos;
     bool ssl_swept   = compressed_market_state.find("SSL_SWEPT") != std::string::npos || compressed_market_state.find("SWEEP:BOTH") != std::string::npos;
@@ -283,47 +245,82 @@ LayaOutput LayaONNXEngine::InferPrimitives(const std::string& compressed_market_
     bool bull_ob     = compressed_market_state.find("OB:B:") != std::string::npos;
     bool bear_ob     = compressed_market_state.find("OB:S:") != std::string::npos;
     bool disp        = compressed_market_state.find("DISP:T") != std::string::npos;
+    bool vol_exp     = compressed_market_state.find("VOL_EXP:T") != std::string::npos;
     bool h1_bull     = compressed_market_state.find("H1:BULLISH") != std::string::npos;
     bool h1_bear     = compressed_market_state.find("H1:BEARISH") != std::string::npos;
-
-    // Choice Primitive
-    std::vector<std::string> choice_labels = {
-        "MARKET_BUY", "MARKET_SELL", "LIMIT_BUY_ORDER_BLOCK", "LIMIT_SELL_ORDER_BLOCK", "HOLD"
-    };
-    std::vector<float> choice_logits = { -2.0f, -2.0f, -1.0f, -1.0f, 4.5f };
+    bool m5_bull     = compressed_market_state.find("M5:MSS_BULLISH") != std::string::npos || compressed_market_state.find("M5:BOS_BULLISH") != std::string::npos;
+    bool m5_bear     = compressed_market_state.find("M5:MSS_BEARISH") != std::string::npos || compressed_market_state.find("M5:BOS_BEARISH") != std::string::npos;
 
     int bull_score = 0;
     if (is_discount) bull_score += 2;
     if (ssl_swept)   bull_score += 3;
     if (h1_bull)     bull_score += 2;
-    if (bull_fvg || bull_ob) bull_score += 2;
+    if (m5_bull)     bull_score += 1;
+    if (bull_fvg)    bull_score += 2;
+    if (bull_ob)     bull_score += 2;
     if (disp)        bull_score += 2;
+    if (vol_exp)     bull_score += 1;
 
     int bear_score = 0;
     if (is_premium)  bear_score += 2;
     if (bsl_swept)   bear_score += 3;
     if (h1_bear)     bear_score += 2;
-    if (bear_fvg || bear_ob) bear_score += 2;
+    if (m5_bear)     bear_score += 1;
+    if (bear_fvg)    bear_score += 2;
+    if (bear_ob)     bear_score += 2;
     if (disp)        bear_score += 2;
+    if (vol_exp)     bear_score += 1;
 
-    if (bull_score >= 8) {
-        if (bull_ob && !ssl_swept) {
-            choice_logits = { 2.5f, -4.0f, 6.8f, -5.0f, -1.0f };
-        } else {
-            choice_logits = { 7.5f, -5.0f, 3.0f, -5.0f, -2.0f };
-        }
-    } else if (bear_score >= 8) {
-        if (bear_ob && !bsl_swept) {
-            choice_logits = { -4.0f, 2.5f, -5.0f, 6.8f, -1.0f };
-        } else {
-            choice_logits = { -5.0f, 7.5f, -5.0f, 3.0f, -2.0f };
-        }
+    // Condition logits with SMC Confluence Engine
+    if (choice_logits.size() < 5) {
+        choice_logits = { -2.0f, -2.0f, -1.0f, -1.0f, 4.5f };
     }
 
+    if (bull_score >= 6) {
+        if (bull_ob && !ssl_swept) {
+            choice_logits[0] += 2.0f + bull_score * 0.2f;
+            choice_logits[1] -= 5.0f;
+            choice_logits[2] += 5.5f + bull_score * 0.4f;
+            choice_logits[3] -= 5.0f;
+            choice_logits[4] -= 3.5f;
+        } else {
+            choice_logits[0] += 5.5f + bull_score * 0.45f;
+            choice_logits[1] -= 5.0f;
+            choice_logits[2] += 2.5f;
+            choice_logits[3] -= 5.0f;
+            choice_logits[4] -= 3.5f;
+        }
+    } else if (bear_score >= 6) {
+        if (bear_ob && !bsl_swept) {
+            choice_logits[0] -= 5.0f;
+            choice_logits[1] += 2.0f + bear_score * 0.2f;
+            choice_logits[2] -= 5.0f;
+            choice_logits[3] += 5.5f + bear_score * 0.4f;
+            choice_logits[4] -= 3.5f;
+        } else {
+            choice_logits[0] -= 5.0f;
+            choice_logits[1] += 5.5f + bear_score * 0.45f;
+            choice_logits[2] -= 5.0f;
+            choice_logits[3] += 2.5f;
+            choice_logits[4] -= 3.5f;
+        }
+    } else {
+        // Range / Equilibrium / Consolidation: HOLD dominates
+        choice_logits[4] += 3.5f + (6 - std::max(bull_score, bear_score)) * 0.5f;
+        choice_logits[0] += (bull_score - bear_score) * 0.4f - 1.0f;
+        choice_logits[1] += (bear_score - bull_score) * 0.4f - 1.0f;
+        choice_logits[2] += (bull_ob ? 1.0f : -2.0f);
+        choice_logits[3] += (bear_ob ? 1.0f : -2.0f);
+    }
+
+    std::vector<std::string> choice_labels = {
+        "MARKET_BUY", "MARKET_SELL", "LIMIT_BUY_ORDER_BLOCK", "LIMIT_SELL_ORDER_BLOCK", "HOLD"
+    };
     std::vector<float> choice_probs = Softmax(choice_logits, 1.35f);
     size_t top_idx = std::distance(choice_probs.begin(), std::max_element(choice_probs.begin(), choice_probs.end()));
     out.choice_action = choice_labels[top_idx];
     out.choice_confidence = choice_probs[top_idx];
+    out.choice_distribution.clear();
     for (size_t i = 0; i < choice_labels.size(); ++i) {
         out.choice_distribution.push_back({choice_labels[i], choice_probs[i]});
     }
@@ -335,23 +332,24 @@ LayaOutput LayaONNXEngine::InferPrimitives(const std::string& compressed_market_
     if (h1_bull || h1_bear)        alignment_count++;
     if (bull_fvg || bear_fvg)      alignment_count++;
     if (disp)                      alignment_count++;
+    if (vol_exp)                   alignment_count++;
 
-    float mean_grade = std::min(10.0f, std::max(1.0f, alignment_count * 2.0f));
+    float target_grade = std::min(10.0f, std::max(1.5f, alignment_count * 1.5f + 0.8f));
+    if (has_score_raw && onnx_score_raw > 0.0f) {
+        out.score_grade = std::min(10.0f, std::max(1.0f, 0.25f * onnx_score_raw + 0.75f * target_grade));
+    } else {
+        out.score_grade = target_grade;
+    }
+    out.score_top_grade = std::min(10, std::max(1, static_cast<int>(std::round(out.score_grade))));
+
     std::vector<float> score_logits(10);
     for (int g = 1; g <= 10; ++g) {
-        score_logits[g - 1] = -0.5f * std::pow(((float)g - mean_grade) / 1.2f, 2.0f);
+        score_logits[g - 1] = -0.5f * std::pow(((float)g - out.score_grade) / 1.2f, 2.0f);
     }
     out.score_distribution = Softmax(score_logits, 1.0f);
 
-    float expected_score = 0.0f;
-    for (int g = 1; g <= 10; ++g) {
-        expected_score += (float)g * out.score_distribution[g - 1];
-    }
-    out.score_grade = expected_score;
-    out.score_top_grade = static_cast<int>(std::distance(out.score_distribution.begin(),
-        std::max_element(out.score_distribution.begin(), out.score_distribution.end()))) + 1;
-
-    // Noul Primitive: Sigmoid function mapping
+    // Noul Primitive
+    out.noul_checks.clear();
     float p_asian = Sigmoid((ssl_swept || bsl_swept) ? 3.5f : -3.5f);
     out.noul_checks.push_back({
         "Asian Session Liquidity Swept",
