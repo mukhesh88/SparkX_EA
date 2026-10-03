@@ -169,14 +169,13 @@ void RenderHeaderAndToggle(ThreadSafeAppState& state, const MarketFrame& frame) 
     ImGui::TextColored(CyberpunkTheme::TEXT_MUTED, "Ultra-Low-Latency\nDecision Engine (Laya-ONNX)");
 
     // Middle: Dedicated Gold Asset Display Card
-    ImGui::SameLine(ImGui::GetWindowWidth() * 0.40f);
+    ImGui::SameLine(325.0f);
     ImGui::SetCursorPosY(ImGui::GetCursorPosY() + 2.0f);
     RenderAssetPill("XAUUSD (GOLD)", frame.price > 100.0 ? frame.price : 4186.80);
 
     // Right: Pill Badges using ImGui::RenderFrame style
     bool is_mt5 = (frame.feed_source.find("MT5") != std::string::npos);
-    float right_offset = !is_mt5 ? 980.0f : 860.0f;
-    ImGui::SameLine(ImGui::GetWindowWidth() - right_offset);
+    ImGui::SameLine(570.0f);
     ImGui::SetCursorPosY(ImGui::GetCursorPosY() + 8.0f);
 
     // Pill: Feed Source (MT5 Live or TradingView Live)
