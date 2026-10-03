@@ -1,12 +1,12 @@
-# SparkX Terminal Distribution Packager
+# SparkX EA Distribution Packager
 param(
     [switch]$Zip = $false
 )
 
 $RootDir = Split-Path -Parent $PSScriptRoot
-$ReleaseDir = Join-Path $RootDir "release\SparkX_Terminal"
+$ReleaseDir = Join-Path $RootDir "release\SparkX_EA"
 
-Write-Host "Creating SparkX Standalone Release Package in: $ReleaseDir" -ForegroundColor Cyan
+Write-Host "Creating SparkX EA Standalone Release Package in: $ReleaseDir" -ForegroundColor Cyan
 
 if (Test-Path $ReleaseDir) {
     Remove-Item -Recurse -Force $ReleaseDir
@@ -46,7 +46,7 @@ Copy-Item (Join-Path $RootDir "dist\SparkX_Backend\*") -Destination $DestBackend
 # 6. Instructions README
 $ReadmeContent = @"
 ================================================================================
-  SPARKX TERMINAL // ULTRA-LOW-LATENCY SMC DECISION ENGINE (LAYA-ONNX C++)
+  SPARKX EA // ULTRA-LOW-LATENCY SMC DECISION ENGINE (LAYA-ONNX C++)
 ================================================================================
 
 HOW TO RUN:
@@ -64,7 +64,7 @@ Set-Content -Path (Join-Path $ReleaseDir "README.txt") -Value $ReadmeContent
 Write-Host "Release package successfully created at: $ReleaseDir" -ForegroundColor Green
 
 if ($Zip) {
-    $ZipFile = Join-Path $RootDir "release\SparkX_Terminal_v1.0.zip"
+    $ZipFile = Join-Path $RootDir "release\SparkX_EA_v1.0.zip"
     Write-Host "Compressing to $ZipFile..." -ForegroundColor Cyan
     Compress-Archive -Path "$ReleaseDir\*" -DestinationPath $ZipFile -Force
     Write-Host "Zip archive created: $ZipFile" -ForegroundColor Green

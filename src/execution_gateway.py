@@ -395,7 +395,7 @@ class MT5ExecutionGateway:
             "sl": plan.stop_loss,
             "tp": plan.take_profit,
             "deviation": self.risk.slippage_points,
-            "magic": 999111,  # SparkX Terminal magic number
+            "magic": 999111,  # SparkX EA magic number
             "comment": f"SparkX_Laya_S{int(decision.score.grade)}",
             "type_time": mt5.ORDER_TIME_GTC,
             "type_filling": type_filling,

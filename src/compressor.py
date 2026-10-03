@@ -1,5 +1,5 @@
 """
-Market State Compressor for SparkX Terminal
+Market State Compressor for SparkX EA
 Compresses multi-timeframe OHLCV, session times, SMC arrays, and liquidity state
 into a dense, token-vectorized string strictly under 400 tokens for Laya's 512-token window.
 """

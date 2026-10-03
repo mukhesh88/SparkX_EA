@@ -1,5 +1,5 @@
 """
-SparkX Terminal - Trade Manager & Execution State Tracker
+SparkX EA - Trade Manager & Execution State Tracker
 Maintains live open positions, historical closed trades, PnL statistics,
 and dynamic trading settings with JSON persistence.
 """

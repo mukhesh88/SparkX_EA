@@ -1,4 +1,4 @@
-# SparkX Terminal: Live Laya ONNX Integration & ModernBERT Tokenizer Architecture
+# SparkX EA: Live Laya ONNX Integration & ModernBERT Tokenizer Architecture
 
 This document details the refactored, live ONNX Runtime C++ integration with the official `laya.onnx` model weights, ModernBERT tokenizer, CUDA hardware acceleration for the NVIDIA GeForce RTX 4060, and thread-safe Dear ImGui dashboard rendering.
 
@@ -109,7 +109,7 @@ C:\mingw64\bin\cmake.exe -B build -S . -G Ninja -DCMAKE_C_COMPILER=C:/mingw64/bi
 C:\mingw64\bin\ninja.exe -C build
 ```
 
-### Launching the SparkX Terminal GUI
+### Launching the SparkX EA GUI
 ```powershell
 .\build\cpp_engine\sparkx_terminal_gui.exe
 ```

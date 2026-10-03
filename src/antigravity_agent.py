@@ -1,6 +1,6 @@
 """
 Antigravity Algorithmic Trading Agent & Event-Driven Engine
-SparkX Terminal - High-Frequency SMC Ingestion, Compression, and Decision Loop.
+SparkX EA - High-Frequency SMC Ingestion, Compression, and Decision Loop.
 Orchestrates MT5 multi-timeframe streams, sub-400 token state compression,
 concurrent Laya GPU inference (~7ms-33ms), and deterministic trade execution.
 """
@@ -388,7 +388,7 @@ class SparkXTradingAgent:
         Designed to integrate with Antigravity agent triggers or run as a standalone daemon.
         """
         self.is_running = True
-        logger.info("SparkX Terminal Antigravity Event Loop initiated.")
+        logger.info("SparkX EA Antigravity Event Loop initiated.")
         logger.info(f"Target Assets: {self.config.symbols} | Poll interval: {self.config.poll_interval_sec}s")
 
         try:

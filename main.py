@@ -1,5 +1,5 @@
 """
-SparkX Terminal - High-Frequency SMC Trading Engine
+SparkX EA - High-Frequency SMC Trading Engine
 Main entry point for running the Antigravity trading decision agent and latency benchmarking.
 """
 
@@ -139,7 +139,7 @@ async def run_latency_benchmark(agent: SparkXTradingAgent, iterations: int = 100
 
 def main():
     print_banner()
-    parser = argparse.ArgumentParser(description="SparkX Terminal Decision Agent")
+    parser = argparse.ArgumentParser(description="SparkX EA Decision Agent")
     parser.add_argument("--benchmark", action="store_true", help="Run latency profiling benchmark")
     parser.add_argument("--iterations", type=int, default=50, help="Benchmark sample count")
     parser.add_argument("--loop", action="store_true", help="Run continuous Antigravity event loop")

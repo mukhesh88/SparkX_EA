@@ -164,7 +164,7 @@ static void glfw_error_callback(int error, const char* description) {
 
 int main(int argc, char** argv) {
     std::cout << "================================================================================" << std::endl;
-    std::cout << "  SPARKX TERMINAL // ULTRA-LOW-LATENCY SMC DECISION ENGINE (LAYA-ONNX C++)" << std::endl;
+    std::cout << "  SPARKX EA // ULTRA-LOW-LATENCY SMC DECISION ENGINE (LAYA-ONNX C++)" << std::endl;
     std::cout << "================================================================================" << std::endl;
 
     glfwSetErrorCallback(glfw_error_callback);
@@ -181,7 +181,7 @@ int main(int argc, char** argv) {
     glfwWindowHint(GLFW_OPENGL_FORWARD_COMPAT, GLFW_TRUE);
 
     // Create GLFW window with dark titlebar
-    GLFWwindow* window = glfwCreateWindow(1500, 920, "SparkX Terminal // Laya SMC Algorithmic Engine", nullptr, nullptr);
+    GLFWwindow* window = glfwCreateWindow(1500, 920, "SparkX EA // Laya SMC Algorithmic Engine", nullptr, nullptr);
     if (window == nullptr) {
         std::cerr << "[FATAL] Failed to create GLFW window." << std::endl;
         glfwTerminate();
@@ -216,7 +216,7 @@ int main(int argc, char** argv) {
 
     // 1. Initialize State & Logging
     ThreadSafeAppState app_state;
-    app_state.AddLog("INFO", "SparkX Terminal Engine core initialized.");
+    app_state.AddLog("INFO", "SparkX EA Engine core initialized.");
 
     // Auto-launch Python backend if not already running
     std::string ws_dir = FindWorkspaceRoot();

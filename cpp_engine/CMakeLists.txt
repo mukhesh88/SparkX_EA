@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.20)
-project(SparkXTerminalEngine LANGUAGES C CXX)
+project(SparkXEAEngine LANGUAGES C CXX)
 
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -102,7 +102,7 @@ if(DEFINED ONNXRUNTIME_ROOT_DIR)
 endif()
 
 # ------------------------------------------------------------------------------
-# 6. SparkX Terminal GUI Executable
+# 6. SparkX EA GUI Executable
 # ------------------------------------------------------------------------------
 set(SPARKX_SOURCES
     src/main.cpp

@@ -1,5 +1,5 @@
 """
-SparkX Terminal - Mobile Notification Dispatcher
+SparkX EA - Mobile Notification Dispatcher
 Sends real-time institutional trade signals and fill receipts to your phone
 via Telegram Bot and Discord Webhook.
 """
@@ -87,7 +87,7 @@ class MobileAlertDispatcher:
         # 1. Dispatch Telegram Alert
         if self.telegram_enabled and self.telegram_token and self.telegram_chat_id:
             tg_text = (
-                f"{emoji} <b>SPARKX TERMINAL // AI SIGNAL</b>\n\n"
+                f"{emoji} <b>SPARKX EA // AI SIGNAL</b>\n\n"
                 f"<b>Asset:</b> <code>{symbol}</code>\n"
                 f"<b>Action:</b> <b>{action_name}</b>\n"
                 f"<b>Entry Price:</b> <code>${price:,.2f}</code>\n"
@@ -107,7 +107,7 @@ class MobileAlertDispatcher:
         if self.discord_enabled and self.discord_webhook:
             color = 0x00FF66 if is_buy else 0xFF003C
             embed = {
-                "title": f"{emoji} SparkX AI Signal: {symbol} - {action}",
+                "title": f"{emoji} SparkX EA Signal: {symbol} - {action}",
                 "color": color,
                 "fields": [
                     {"name": "Action", "value": action_name, "inline": True},
@@ -118,7 +118,7 @@ class MobileAlertDispatcher:
                     {"name": "Setup Score", "value": f"{score:.1f} / 10.0", "inline": True},
                     {"name": "SMC Confluence", "value": reason, "inline": False}
                 ],
-                "footer": {"text": "SparkX Terminal // Laya ONNX Ultra-Low-Latency Engine"}
+                "footer": {"text": "SparkX EA // Laya ONNX Ultra-Low-Latency Engine"}
             }
             if order_id:
                 embed["fields"].append({"name": "Broker Execution", "value": f"Filled MT5 Ticket #{order_id}", "inline": False})

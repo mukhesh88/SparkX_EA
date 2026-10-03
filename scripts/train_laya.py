@@ -1,5 +1,5 @@
 """
-SparkX Terminal - Laya AI Institutional Model Training Pipeline
+SparkX EA - Laya AI Institutional Model Training Pipeline
 Fine-tunes the ModernBERT-based Laya AI model on multi-timeframe Smart Money Concepts (SMC)
 data using institutional triple-barrier labeling, and exports the optimized ONNX model.
 """

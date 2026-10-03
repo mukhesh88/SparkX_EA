@@ -1,5 +1,5 @@
 """
-SparkX Terminal - Trading Configuration
+SparkX EA - Trading Configuration
 Configures assets, risk rules, SMC parameters, and Laya inference settings.
 """
 
@@ -64,7 +64,7 @@ class LayaConfig:
 
 @dataclass(frozen=True)
 class SystemConfig:
-    """SparkX Terminal master configuration."""
+    """SparkX EA master configuration."""
     symbols: List[str] = field(default_factory=lambda: ["XAUUSD"])
     timeframes: List[str] = field(default_factory=lambda: ["H1", "M15", "M5"])
     poll_interval_sec: float = 1.0  # M5 bar / high-resolution tick polling

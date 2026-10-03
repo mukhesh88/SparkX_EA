@@ -159,7 +159,7 @@ void RenderHeaderAndToggle(ThreadSafeAppState& state, const MarketFrame& frame) 
     ImGui::SetCursorPosX(ImGui::GetCursorPosX() + 38.0f);
     ImGui::SetCursorPosY(ImGui::GetCursorPosY() + 10.0f);
     ImGui::PushFont(CyberpunkTheme::g_font_bold_large);
-    ImGui::TextColored(CyberpunkTheme::TEXT_PRIMARY, "SparkX");
+    ImGui::TextColored(CyberpunkTheme::TEXT_PRIMARY, "SparkX EA");
     ImGui::PopFont();
 
     ImGui::SameLine();
@@ -1187,7 +1187,7 @@ void RenderTradeSettingsModal(ThreadSafeAppState& state) {
 
         // Header Title
         ImGui::PushFont(CyberpunkTheme::g_font_bold_med);
-        ImGui::TextColored(CyberpunkTheme::NEON_CYAN, "SPARKX // ALGORITHMIC TRADE SETTINGS & RISK GATES");
+        ImGui::TextColored(CyberpunkTheme::NEON_CYAN, "SPARKX EA // ALGORITHMIC TRADE SETTINGS & RISK GATES");
         ImGui::PopFont();
         ImGui::TextColored(CyberpunkTheme::TEXT_MUTED, "Configure position sizing, SL/TP brackets, institutional SMC filters, and phone notifications.");
         ImGui::Separator();

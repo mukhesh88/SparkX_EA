@@ -1,5 +1,5 @@
 """
-Unit & Integration Verification Suite for SparkX Terminal Decision Agent
+Unit & Integration Verification Suite for SparkX EA Decision Agent
 Validates:
 1. Market State Compression strictly < 400 tokens
 2. Laya Decision Primitives (Choice, Score, Noul)

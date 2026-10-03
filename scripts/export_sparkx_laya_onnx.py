@@ -10,7 +10,7 @@ from laya.agent import Agent
 
 class SparkXLayaModel(nn.Module):
     """
-    Direct end-to-end ONNX inference wrapper for SparkX Terminal.
+    Direct end-to-end ONNX inference wrapper for SparkX EA.
     Takes (input_ids, attention_mask) of shape [batch, 512].
     Produces:
       - choice_logits [batch, 5]: Directional action probabilities

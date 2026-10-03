@@ -1,5 +1,5 @@
 """
-SparkX Terminal - Headless Python Market Data Node
+SparkX EA - Headless Python Market Data Node
 Extracts institutional Smart Money Concepts (SMC) features from MetaTrader 5,
 compresses market state strictly under 512 tokens, and broadcasts locally via ZeroMQ (PUB).
 """

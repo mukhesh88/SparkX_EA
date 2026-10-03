@@ -1,4 +1,4 @@
-# ⚡ SparkX Terminal (Spark_Ai_Algo)
+# ⚡ SparkX EA
 
 <div align="center">
 
@@ -9,7 +9,7 @@
 ![Dear ImGui](https://img.shields.io/badge/GUI-Dear%20ImGui%20OpenGL-orange.svg?style=for-the-badge)
 ![License](https://img.shields.io/badge/License-Apache%202.0-lightgrey.svg?style=for-the-badge)
 
-**High-Frequency Institutional Algorithmic Trading Desktop Terminal Powered by Laya AI & Dear ImGui**
+**High-Frequency Institutional Algorithmic Trading Expert Advisor Powered by Laya AI & Dear ImGui**
 
 *Engineered for institutional Smart Money Concepts (SMC), sub-5ms probabilistic decision-making, and automated trade execution across MetaTrader 5 broker terminals.*
 
@@ -20,7 +20,7 @@
 ## 📸 Desktop Cockpit Preview
 
 <div align="center">
-  <img src="assets/preview.png" alt="SparkX Terminal GUI Cockpit" width="100%" />
+  <img src="assets/preview.png" alt="SparkX EA GUI Cockpit" width="100%" />
 </div>
 
 ---
@@ -89,7 +89,7 @@ flowchart TD
 
 Laya decomposes trading decisions into three calibrated outputs:
 
-| Primitive | Type | Function in SparkX |
+| Primitive | Type | Function in SparkX EA |
 | :--- | :--- | :--- |
 | **Choice** | Categorical (5 classes) | `MARKET_BUY`, `MARKET_SELL`, `LIMIT_BUY_ORDER_BLOCK`, `LIMIT_SELL_ORDER_BLOCK`, `HOLD` |
 | **Score** | Continuous (1.0 to 10.0) | Institutional setup quality score derived from multi-timeframe confluence and R-multiple expectancy |
@@ -142,7 +142,7 @@ Spark_Ai_Algo/
 ## 🚀 Quick Start Guide
 
 ### Option 1: Run the Standalone Release (No Build Tools Required)
-1. Download or navigate to the `release/SparkX_Terminal/` directory.
+1. Download or navigate to the `release/` directory.
 2. Double-click **`SparkX_Ai_Algo.exe`**.
 3. The application will launch the C++ cockpit and automatically spawn the background Python data service.
 
@@ -170,7 +170,7 @@ cmake -B build -G "Ninja" -DCMAKE_BUILD_TYPE=Release
 cmake --build build --config Release
 ```
 
-#### 4. Launch SparkX Terminal
+#### 4. Launch SparkX EA
 ```powershell
 .\run_sparkx.bat
 # or in PowerShell:
@@ -181,7 +181,7 @@ cmake --build build --config Release
 
 ## 🧠 Training & Fine-Tuning the Laya Model
 
-SparkX includes an integrated training pipeline in [`scripts/train_laya.py`](scripts/train_laya.py) that fetches historical bars from MetaTrader 5, labels setups using an institutional triple-barrier method, and exports the compiled ONNX model.
+SparkX EA includes an integrated training pipeline in [`scripts/train_laya.py`](scripts/train_laya.py) that fetches historical bars from MetaTrader 5, labels setups using an institutional triple-barrier method, and exports the compiled ONNX model.
 
 ```powershell
 # Run training on Gold (XAUUSD) for 5000 historical bars
