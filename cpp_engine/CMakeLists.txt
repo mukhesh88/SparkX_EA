@@ -172,6 +172,12 @@ add_custom_command(TARGET SparkX_EA POST_BUILD
     "$<TARGET_FILE:SparkX_EA>"
     "${CMAKE_CURRENT_SOURCE_DIR}/../SparkX_EA.exe"
     COMMAND ${CMAKE_COMMAND} -E copy_if_different
+    "$<TARGET_FILE:SparkX_EA>"
+    "${CMAKE_CURRENT_BINARY_DIR}/SparkX_Ai_Algo.exe"
+    COMMAND ${CMAKE_COMMAND} -E copy_if_different
+    "$<TARGET_FILE:SparkX_EA>"
+    "${CMAKE_CURRENT_SOURCE_DIR}/../SparkX_Ai_Algo.exe"
+    COMMAND ${CMAKE_COMMAND} -E copy_if_different
     "${ONNXRUNTIME_LOCAL_LIB}/onnxruntime.dll"
     "${CMAKE_CURRENT_SOURCE_DIR}/../onnxruntime.dll"
     COMMENT "Deploying standalone SparkX_EA.exe and runtime DLLs to workspace root"
