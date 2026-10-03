@@ -100,7 +100,7 @@ Laya decomposes trading decisions into three calibrated outputs:
 ## 📁 Project Structure
 
 ```
-Spark_Ai_Algo/
+SparkX_EA/
 ├── cpp_engine/                     # Native C++ Desktop Application
 │   ├── CMakeLists.txt              # CMake build definition
 │   ├── include/                    # Header files
@@ -143,15 +143,15 @@ Spark_Ai_Algo/
 
 ### Option 1: Run the Standalone Release (No Build Tools Required)
 1. Download or navigate to the `release/` directory.
-2. Double-click **`SparkX_Ai_Algo.exe`**.
+2. Double-click **`SparkX_EA.exe`** (or `run_sparkx.bat`).
 3. The application will launch the C++ cockpit and automatically spawn the background Python data service.
 
 ### Option 2: Run from Source
 
 #### 1. Clone the Repository
 ```powershell
-git clone https://github.com/mukhesh88/Spark_Ai_Algo.git
-cd Spark_Ai_Algo
+git clone https://github.com/mukhesh88/SparkX_EA.git
+cd SparkX_EA
 ```
 
 #### 2. Set Up Python Environment

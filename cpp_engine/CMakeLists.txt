@@ -122,10 +122,10 @@ set(SPARKX_HEADERS
     include/ui_panels.hpp
 )
 
-add_executable(SparkX_Ai_Algo ${SPARKX_SOURCES} ${SPARKX_HEADERS})
-set_target_properties(SparkX_Ai_Algo PROPERTIES OUTPUT_NAME "SparkX_Ai_Algo")
+add_executable(SparkX_EA ${SPARKX_SOURCES} ${SPARKX_HEADERS})
+set_target_properties(SparkX_EA PROPERTIES OUTPUT_NAME "SparkX_EA")
 
-target_include_directories(SparkX_Ai_Algo PRIVATE
+target_include_directories(SparkX_EA PRIVATE
     include
     ${ONNXRUNTIME_LOCAL_INCLUDE}
     ${imgui_SOURCE_DIR}
@@ -133,46 +133,46 @@ target_include_directories(SparkX_Ai_Algo PRIVATE
     ${glfw_SOURCE_DIR}/include
 )
 
-target_link_libraries(SparkX_Ai_Algo PRIVATE
+target_link_libraries(SparkX_EA PRIVATE
     imgui_lib
     glfw
     OpenGL::GL
 )
 
 if(TARGET cppzmq)
-    target_link_libraries(SparkX_Ai_Algo PRIVATE cppzmq)
+    target_link_libraries(SparkX_EA PRIVATE cppzmq)
 endif()
 
 set(ONNXRUNTIME_LOCAL_LIB "${CMAKE_CURRENT_SOURCE_DIR}/third_party/onnxruntime/lib")
 if(EXISTS "${ONNXRUNTIME_LOCAL_LIB}/libonnxruntime.dll.a")
-    target_link_directories(SparkX_Ai_Algo PRIVATE ${ONNXRUNTIME_LOCAL_LIB})
-    target_link_libraries(SparkX_Ai_Algo PRIVATE onnxruntime)
-    add_custom_command(TARGET SparkX_Ai_Algo POST_BUILD
+    target_link_directories(SparkX_EA PRIVATE ${ONNXRUNTIME_LOCAL_LIB})
+    target_link_libraries(SparkX_EA PRIVATE onnxruntime)
+    add_custom_command(TARGET SparkX_EA POST_BUILD
         COMMAND ${CMAKE_COMMAND} -E copy_if_different
         "${ONNXRUNTIME_LOCAL_LIB}/onnxruntime.dll"
-        $<TARGET_FILE_DIR:SparkX_Ai_Algo>
+        $<TARGET_FILE_DIR:SparkX_EA>
     )
 endif()
 
 if(DEFINED ONNXRUNTIME_ROOT_DIR)
-    target_link_libraries(SparkX_Ai_Algo PRIVATE onnxruntime)
+    target_link_libraries(SparkX_EA PRIVATE onnxruntime)
 endif()
 
 # Windows specific linkages & static standalone flags
 if(WIN32)
-    target_link_libraries(SparkX_Ai_Algo PRIVATE opengl32 gdi32 user32 shell32 ws2_32)
+    target_link_libraries(SparkX_EA PRIVATE opengl32 gdi32 user32 shell32 ws2_32)
     if(MINGW)
-        target_link_options(SparkX_Ai_Algo PRIVATE -mwindows -static-libgcc -static-libstdc++ -Wl,-Bstatic -lwinpthread -Wl,-Bdynamic)
+        target_link_options(SparkX_EA PRIVATE -mwindows -static-libgcc -static-libstdc++ -Wl,-Bstatic -lwinpthread -Wl,-Bdynamic)
     endif()
 endif()
 
 # Copy standalone executable and onnxruntime.dll to workspace root for direct 1-click execution
-add_custom_command(TARGET SparkX_Ai_Algo POST_BUILD
+add_custom_command(TARGET SparkX_EA POST_BUILD
     COMMAND ${CMAKE_COMMAND} -E copy_if_different
-    "$<TARGET_FILE:SparkX_Ai_Algo>"
-    "${CMAKE_CURRENT_SOURCE_DIR}/../SparkX_Ai_Algo.exe"
+    "$<TARGET_FILE:SparkX_EA>"
+    "${CMAKE_CURRENT_SOURCE_DIR}/../SparkX_EA.exe"
     COMMAND ${CMAKE_COMMAND} -E copy_if_different
     "${ONNXRUNTIME_LOCAL_LIB}/onnxruntime.dll"
     "${CMAKE_CURRENT_SOURCE_DIR}/../onnxruntime.dll"
-    COMMENT "Deploying standalone SparkX_Ai_Algo.exe and runtime DLLs to workspace root"
+    COMMENT "Deploying standalone SparkX_EA.exe and runtime DLLs to workspace root"
 )
