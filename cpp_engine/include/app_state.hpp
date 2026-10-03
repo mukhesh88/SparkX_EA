@@ -137,9 +137,9 @@ struct TradeSettings {
     bool require_h1_trend = true;
     bool require_m5_fvg = true;
     bool require_liquidity_sweep = false;
-    bool discord_alerts = true;
+    bool discord_alerts = false;
     bool telegram_alerts = false;
-    char discord_webhook[512] = "https://discord.com/api/webhooks/1555175799231881266/bkqKtxRVSnHN6Lbb9pD0r7vGOVCVu7m12fm-nd5YkIRzB-hx2MU8uPwnD1KYQ6kfZeLH";
+    char discord_webhook[512] = "";
     char telegram_token[128] = "";
     char telegram_chat_id[64] = "";
 };

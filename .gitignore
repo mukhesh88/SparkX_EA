@@ -54,3 +54,9 @@ scratch/
 .DS_Store
 Thumbs.db
 desktop.ini
+
+# Sensitive Credentials & User Runtime State
+config/mobile_alerts.json
+config/trade_history.json
+.env
+*.env
