@@ -668,7 +668,7 @@ void RenderLayaPrimitives(const LayaOutput& laya, const MarketFrame& frame) {
 void RenderSMCContext(const MarketFrame& frame) {
     ImGui::PushStyleColor(ImGuiCol_ChildBg, CyberpunkTheme::BG_PANEL);
     ImGui::PushStyleColor(ImGuiCol_Border, CyberpunkTheme::BORDER_DARK);
-    ImGui::BeginChild("SMCContextPanel", ImVec2(0, 168), true, ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoScrollWithMouse);
+    ImGui::BeginChild("SMCContextPanel", ImVec2(0, 180), true, ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoScrollWithMouse);
 
     ImGui::TextColored(CyberpunkTheme::NEON_CYAN, "LIVE MARKET DATA & SMC CONFLUENCE MATRIX");
     ImGui::SameLine(ImGui::GetWindowWidth() - 320);
@@ -677,13 +677,15 @@ void RenderSMCContext(const MarketFrame& frame) {
 
     ImVec2 avail = ImGui::GetContentRegionAvail();
     float card_w = (avail.x - 36.0f) / 5.0f;
-    float card_h = 108.0f;
-    ImDrawList* dl = ImGui::GetWindowDrawList();
+    float card_h = 126.0f;
 
     // -------------------------------------------------------------------------
     // Card 1: ASSET PRICING
     // -------------------------------------------------------------------------
     ImGui::BeginChild("Card1_Pricing", ImVec2(card_w, card_h), true, ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoScrollWithMouse);
+    ImDrawList* card1_dl = ImGui::GetWindowDrawList();
+    ImVec2 card1_pos = ImGui::GetWindowPos();
+
     ImGui::TextColored(CyberpunkTheme::TEXT_MUTED, "ASSET PRICING:");
     ImGui::PushFont(CyberpunkTheme::g_font_bold_med);
     ImGui::TextColored(CyberpunkTheme::NEON_GREEN, "%s / $%.2f", frame.symbol.c_str(), frame.price);
@@ -691,8 +693,10 @@ void RenderSMCContext(const MarketFrame& frame) {
     ImGui::TextColored(CyberpunkTheme::TEXT_MUTED, "Bid: $%.2f | Ask: $%.2f", frame.bid, frame.ask);
 
     // Mini Sparkline Wave (Gold)
-    ImVec2 sp_pos = ImGui::GetCursorScreenPos();
-    DrawMiniSparkline(dl, sp_pos, ImVec2(card_w - 20.0f, 24.0f), s_gold_history, 32, IM_COL32(242, 192, 51, 230), IM_COL32(242, 192, 51, 35));
+    float sp1_w = card_w - 24.0f;
+    float sp1_h = 24.0f;
+    ImVec2 sp1_pos(card1_pos.x + 12.0f, card1_pos.y + card_h - sp1_h - 12.0f);
+    DrawMiniSparkline(card1_dl, sp1_pos, ImVec2(sp1_w, sp1_h), s_gold_history, 32, IM_COL32(242, 192, 51, 230), IM_COL32(242, 192, 51, 35));
     ImGui::EndChild();
 
     ImGui::SameLine();
@@ -701,17 +705,24 @@ void RenderSMCContext(const MarketFrame& frame) {
     // Card 2: MULTI-TIMEFRAME STRUCTURE
     // -------------------------------------------------------------------------
     ImGui::BeginChild("Card2_MTF", ImVec2(card_w, card_h), true, ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoScrollWithMouse);
+    ImDrawList* card2_dl = ImGui::GetWindowDrawList();
+    ImVec2 card2_pos = ImGui::GetWindowPos();
+
     ImGui::TextColored(CyberpunkTheme::TEXT_MUTED, "MULTI-TIMEFRAME STRUCTURE:");
-    ImGui::Text("H1 Bias   : "); ImGui::SameLine();
+    ImGui::Text("H1: "); ImGui::SameLine();
     ImGui::TextColored(CyberpunkTheme::NEON_AMBER, "%s", frame.bias.h1_trend.c_str());
-    ImGui::Text("M15 Biases: "); ImGui::SameLine();
+    ImGui::SameLine(card_w * 0.46f);
+    ImGui::Text("M15: "); ImGui::SameLine();
     ImGui::TextColored(CyberpunkTheme::TEXT_MUTED, "%s", frame.bias.m15_struct.c_str());
-    ImGui::Text("M5 Micro  : "); ImGui::SameLine();
+
+    ImGui::Text("M5 Micro Shift: "); ImGui::SameLine();
     ImGui::TextColored(CyberpunkTheme::NEON_GREEN, "%s", frame.bias.m5_struct.c_str());
 
     // Mini Sparkline Wave (Red/Green)
-    ImVec2 sp_pos2 = ImGui::GetCursorScreenPos();
-    DrawMiniSparkline(dl, sp_pos2, ImVec2(card_w - 20.0f, 20.0f), s_mtf_history, 32, IM_COL32(255, 60, 60, 220), IM_COL32(255, 60, 60, 30));
+    float sp2_w = card_w - 24.0f;
+    float sp2_h = 22.0f;
+    ImVec2 sp2_pos(card2_pos.x + 12.0f, card2_pos.y + card_h - sp2_h - 12.0f);
+    DrawMiniSparkline(card2_dl, sp2_pos, ImVec2(sp2_w, sp2_h), s_mtf_history, 32, IM_COL32(255, 60, 60, 220), IM_COL32(255, 60, 60, 30));
     ImGui::EndChild();
 
     ImGui::SameLine();
@@ -720,14 +731,20 @@ void RenderSMCContext(const MarketFrame& frame) {
     // Card 3: DEALING RANGE & PRICING
     // -------------------------------------------------------------------------
     ImGui::BeginChild("Card3_Range", ImVec2(card_w, card_h), true, ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoScrollWithMouse);
+    ImDrawList* card3_dl = ImGui::GetWindowDrawList();
+    ImVec2 card3_pos = ImGui::GetWindowPos();
+
     ImGui::TextColored(CyberpunkTheme::TEXT_MUTED, "DEALING RANGE & PRICING:");
     ImGui::TextColored(CyberpunkTheme::NEON_AMBER, "Zone: %s (Fib %.1f%%)", frame.bias.zone.c_str(), frame.bias.fib_pct);
-    ImGui::Text("Asia H/L: $%.2f / $%.2f", frame.liquidity.asia_high, frame.liquidity.asia_low);
-    ImGui::Text("Liquidity Swept: %s", frame.liquidity.ssl_swept ? "SSL_SWEPT" : (frame.liquidity.bsl_swept ? "BSL_SWEPT" : "NONE"));
+    ImGui::Text("Asia: $%.0f-$%.0f", frame.liquidity.asia_low, frame.liquidity.asia_high);
+    ImGui::SameLine(card_w * 0.54f);
+    ImGui::TextColored(CyberpunkTheme::NEON_CYAN, "%s", frame.liquidity.ssl_swept ? "SSL_SWEPT" : (frame.liquidity.bsl_swept ? "BSL_SWEPT" : "NONE"));
 
     // Mini Sparkline Wave (Gold)
-    ImVec2 sp_pos3 = ImGui::GetCursorScreenPos();
-    DrawMiniSparkline(dl, sp_pos3, ImVec2(card_w - 20.0f, 20.0f), s_range_history, 32, IM_COL32(242, 192, 51, 220), IM_COL32(242, 192, 51, 30));
+    float sp3_w = card_w - 24.0f;
+    float sp3_h = 22.0f;
+    ImVec2 sp3_pos(card3_pos.x + 12.0f, card3_pos.y + card_h - sp3_h - 12.0f);
+    DrawMiniSparkline(card3_dl, sp3_pos, ImVec2(sp3_w, sp3_h), s_range_history, 32, IM_COL32(242, 192, 51, 220), IM_COL32(242, 192, 51, 30));
     ImGui::EndChild();
 
     ImGui::SameLine();
@@ -736,13 +753,23 @@ void RenderSMCContext(const MarketFrame& frame) {
     // Card 4: ACTIVE ARRAYS & MOMENTUM
     // -------------------------------------------------------------------------
     ImGui::BeginChild("Card4_Arrays", ImVec2(card_w, card_h), true, ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoScrollWithMouse);
+    ImDrawList* card4_dl = ImGui::GetWindowDrawList();
+    ImVec2 card4_pos = ImGui::GetWindowPos();
+
     ImGui::TextColored(CyberpunkTheme::TEXT_MUTED, "ACTIVE ARRAYS & MOMENTUM:");
-    ImGui::Text("M5 FVG: %s", frame.arrays.fvg_active ? "ACTIVE" : "NONE");
-    ImGui::Text("M5 OB : %s", frame.arrays.ob_active ? "ACTIVE" : "NONE");
+    ImGui::Text("M5 FVG: "); ImGui::SameLine();
+    ImGui::TextColored(CyberpunkTheme::NEON_GREEN, "%s", frame.arrays.fvg_active ? "ACTIVE" : "NONE");
+    ImGui::SameLine(card_w * 0.50f);
+    ImGui::Text("M5 OB: "); ImGui::SameLine();
+    ImGui::TextColored(CyberpunkTheme::NEON_GREEN, "%s", frame.arrays.ob_active ? "ACTIVE" : "NONE");
+
+    ImGui::TextColored(CyberpunkTheme::TEXT_MUTED, "Flow: Institutional Momentum");
 
     // Mini Sparkline Wave (Green)
-    ImVec2 sp_pos4 = ImGui::GetCursorScreenPos();
-    DrawMiniSparkline(dl, sp_pos4, ImVec2(card_w - 20.0f, 26.0f), s_array_history, 32, IM_COL32(0, 255, 102, 220), IM_COL32(0, 255, 102, 35));
+    float sp4_w = card_w - 24.0f;
+    float sp4_h = 24.0f;
+    ImVec2 sp4_pos(card4_pos.x + 12.0f, card4_pos.y + card_h - sp4_h - 12.0f);
+    DrawMiniSparkline(card4_dl, sp4_pos, ImVec2(sp4_w, sp4_h), s_array_history, 32, IM_COL32(0, 255, 102, 220), IM_COL32(0, 255, 102, 35));
     ImGui::EndChild();
 
     ImGui::SameLine();
@@ -751,23 +778,40 @@ void RenderSMCContext(const MarketFrame& frame) {
     // Card 5: TARGETS (Sliders & Dual Target Chart)
     // -------------------------------------------------------------------------
     ImGui::BeginChild("Card5_Targets", ImVec2(card_w, card_h), true, ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoScrollWithMouse);
+    ImDrawList* card5_dl = ImGui::GetWindowDrawList();
+    ImVec2 card5_pos = ImGui::GetWindowPos();
+
     ImGui::TextColored(CyberpunkTheme::TEXT_MUTED, "TARGETS:");
     ImGui::TextColored(CyberpunkTheme::NEON_GREEN, "BSL $%.2f | SSL $%.2f", frame.liquidity.bsl_target, frame.liquidity.ssl_target);
 
-    // Target Range Horizontal sliders with dots
-    ImVec2 t_pos = ImGui::GetCursorScreenPos();
-    float line_w = card_w - 80.0f;
+    // Target Range Horizontal sliders with dynamic targets
+    float slider_label_w = 28.0f;
+    float slider_val_w = 46.0f;
+    float slider_x = card5_pos.x + 12.0f + slider_label_w;
+    float slider_w = card_w - 24.0f - slider_label_w - slider_val_w;
+    float val_x = slider_x + slider_w + 6.0f;
+
+    float line_y1 = card5_pos.y + card_h - 40.0f;
+    float line_y2 = card5_pos.y + card_h - 18.0f;
+
+    char bsl_buf[32];
+    std::snprintf(bsl_buf, sizeof(bsl_buf), "$%.0f", frame.liquidity.bsl_target);
+    char ssl_buf[32];
+    std::snprintf(ssl_buf, sizeof(ssl_buf), "$%.0f", frame.liquidity.ssl_target);
+
     // BSL Line
-    dl->AddLine(ImVec2(t_pos.x + 30, t_pos.y + 6), ImVec2(t_pos.x + 30 + line_w, t_pos.y + 6), IM_COL32(80, 80, 95, 200), 1.5f);
-    dl->AddCircleFilled(ImVec2(t_pos.x + 30 + line_w * 0.75f, t_pos.y + 6), 3.5f, IM_COL32(0, 255, 102, 255));
-    dl->AddText(CyberpunkTheme::g_font_small, 11.0f, ImVec2(t_pos.x, t_pos.y), IM_COL32(140, 140, 155, 255), "BSL");
-    dl->AddText(CyberpunkTheme::g_font_small, 11.0f, ImVec2(t_pos.x + 38 + line_w, t_pos.y), IM_COL32(0, 255, 102, 255), "$4195");
+    card5_dl->AddText(CyberpunkTheme::g_font_small, 11.0f, ImVec2(card5_pos.x + 12.0f, line_y1 - 6.0f), IM_COL32(140, 140, 155, 255), "BSL");
+    card5_dl->AddLine(ImVec2(slider_x, line_y1), ImVec2(slider_x + slider_w, line_y1), IM_COL32(80, 80, 95, 200), 1.5f);
+    card5_dl->AddCircleFilled(ImVec2(slider_x + slider_w * 0.75f, line_y1), 3.5f, IM_COL32(0, 255, 102, 255));
+    card5_dl->AddCircle(ImVec2(slider_x + slider_w * 0.75f, line_y1), 5.5f, IM_COL32(0, 255, 102, 70), 12, 1.0f);
+    card5_dl->AddText(CyberpunkTheme::g_font_small, 11.0f, ImVec2(val_x, line_y1 - 6.0f), IM_COL32(0, 255, 102, 255), bsl_buf);
 
     // SSL Line
-    dl->AddLine(ImVec2(t_pos.x + 30, t_pos.y + 22), ImVec2(t_pos.x + 30 + line_w, t_pos.y + 22), IM_COL32(80, 80, 95, 200), 1.5f);
-    dl->AddCircleFilled(ImVec2(t_pos.x + 30 + line_w * 0.35f, t_pos.y + 22), 3.5f, IM_COL32(255, 60, 60, 255));
-    dl->AddText(CyberpunkTheme::g_font_small, 11.0f, ImVec2(t_pos.x, t_pos.y + 16), IM_COL32(140, 140, 155, 255), "SSL");
-    dl->AddText(CyberpunkTheme::g_font_small, 11.0f, ImVec2(t_pos.x + 38 + line_w, t_pos.y + 16), IM_COL32(255, 60, 60, 255), "$4155");
+    card5_dl->AddText(CyberpunkTheme::g_font_small, 11.0f, ImVec2(card5_pos.x + 12.0f, line_y2 - 6.0f), IM_COL32(140, 140, 155, 255), "SSL");
+    card5_dl->AddLine(ImVec2(slider_x, line_y2), ImVec2(slider_x + slider_w, line_y2), IM_COL32(80, 80, 95, 200), 1.5f);
+    card5_dl->AddCircleFilled(ImVec2(slider_x + slider_w * 0.35f, line_y2), 3.5f, IM_COL32(255, 60, 60, 255));
+    card5_dl->AddCircle(ImVec2(slider_x + slider_w * 0.35f, line_y2), 5.5f, IM_COL32(255, 60, 60, 70), 12, 1.0f);
+    card5_dl->AddText(CyberpunkTheme::g_font_small, 11.0f, ImVec2(val_x, line_y2 - 6.0f), IM_COL32(255, 60, 60, 255), ssl_buf);
 
     ImGui::EndChild();
 

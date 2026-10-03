@@ -250,7 +250,7 @@ int main(int argc, char** argv) {
         frame.bias.h1_trend = "BULLISH";
         frame.bias.m15_struct = "BOS_BULLISH";
         frame.bias.m5_struct = "MSS_BULLISH";
-        frame.bias.zone = "DISCOUNT (Fib: 61.8%)";
+        frame.bias.zone = "DISCOUNT";
         frame.bias.fib_pct = 61.8f;
         frame.liquidity.asia_high = 2678.50;
         frame.liquidity.asia_low = 2662.10;
