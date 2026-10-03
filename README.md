@@ -20,7 +20,7 @@
 ## 📸 Desktop Cockpit Preview
 
 <div align="center">
-  <img src="assets/preview.png" alt="SparkX Terminal GUI Cockpit" width="950px" />
+  <img src="assets/preview.png" alt="SparkX Terminal GUI Cockpit" width="100%" />
 </div>
 
 ---
@@ -52,32 +52,34 @@
 ```mermaid
 flowchart TD
     subgraph Ingestion ["1. Multi-Timeframe Market Ingestion"]
-        MT5[MetaTrader 5 Broker IPC] -->|Ticks & OHLCV Bars| FEED{Data Ingestion}
-        TV[TradingView / Spot Feed] -->|Fallback Stream| FEED
-        FEED --> SMC[SMC Feature Extractor: M5, M15, H1]
-        SMC --> COMP[Market State Compressor: < 512 Tokens]
+        MT5["MetaTrader 5 Broker IPC"] -->|"Ticks and OHLCV Bars"| FEED{"Data Ingestion"}
+        TV["TradingView / Spot Feed"] -->|"Fallback Stream"| FEED
+        FEED --> SMC["SMC Feature Extractor: M5, M15, H1"]
+        SMC --> COMP["Market State Compressor: Under 512 Tokens"]
     end
 
     subgraph LayaBrain ["2. Laya AI Decision Engine (C++ / ONNX)"]
-        COMP -->|Dense State Vector| TOK[ModernBERT Fast Tokenizer]
-        TOK --> ONNX[Laya ONNX Runtime: CUDA / CPU]
-        ONNX --> P1[Primitive 1: Choice Logits (5 Actions)]
-        ONNX --> P2[Primitive 2: Score Grade (1.0 to 10.0)]
-        ONNX --> P3[Primitive 3: Noul Hypothesis Checks]
+        COMP -->|"Dense State Vector"| TOK["ModernBERT Fast Tokenizer"]
+        TOK --> ONNX["Laya ONNX Runtime: CUDA / CPU"]
+        ONNX --> P1["Primitive 1: Choice Logits (5 Actions)"]
+        ONNX --> P2["Primitive 2: Score Grade (1.0 to 10.0)"]
+        ONNX --> P3["Primitive 3: Noul Hypothesis Checks"]
     end
 
     subgraph InstitutionalGate ["3. Institutional Confluence & Execution Gate"]
-        P1 & P2 & P3 --> VETO{SMC Rules & Risk Vetoes}
-        VETO -->|Premium Long / Discount Short| HOLD[HOLD (Confidence 92%)]
-        VETO -->|Target Exhaustion < 5pts| HOLD
-        VETO -->|Score >= 7.5 & Conf >= 85%| GATE[Single-Position Spacing Latch]
-        GATE --> DISP[ZeroMQ IPC Dispatch]
+        P1 --> VETO{"SMC Rules and Risk Vetoes"}
+        P2 --> VETO
+        P3 --> VETO
+        VETO -->|"Premium Long / Discount Short"| HOLD["HOLD (Confidence 92%)"]
+        VETO -->|"Target Exhaustion (under 5pts)"| HOLD
+        VETO -->|"Score >= 7.5 and Conf >= 85%"| GATE["Single-Position Spacing Latch"]
+        GATE --> DISP["ZeroMQ IPC Dispatch"]
     end
 
     subgraph Execution ["4. Execution Gateway & Telemetry"]
-        DISP --> EXEC[MT5 Execution Gateway / Sim Tracker]
-        EXEC --> WEBHOOK[Discord & Telegram Push Alerts]
-        EXEC --> GUI[Dear ImGui Native Desktop Cockpit]
+        DISP --> EXEC["MT5 Execution Gateway / Sim Tracker"]
+        EXEC --> WEBHOOK["Discord and Telegram Push Alerts"]
+        EXEC --> GUI["Dear ImGui Native Desktop Cockpit"]
     end
 ```
 
