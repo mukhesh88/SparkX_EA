@@ -321,10 +321,16 @@ void ZMQListenerWorker::ProcessMessagePayload(const std::string& json_payload, i
     if (state_.GetEngineState() != EngineState::EMERGENCY_KILL) {
         frame.laya_decision = onnx_.InferPrimitives(frame.compressed_state);
 
+        auto settings = state_.GetSettings();
+        float min_conf = (settings.min_confidence > 0.0f) ? (settings.min_confidence / 100.0f) : 0.85f;
+        float min_score = (settings.min_score > 0.0f) ? settings.min_score : 7.0f;
+        auto now_time = std::chrono::steady_clock::now();
+
         // Check if trade action triggered
-        if (frame.laya_decision.choice_action != "HOLD" &&
-            frame.laya_decision.choice_confidence >= 0.85f &&
-            frame.laya_decision.score_grade >= 7.5f) {
+        if (settings.auto_trade_enabled &&
+            frame.laya_decision.choice_action != "HOLD" &&
+            frame.laya_decision.choice_confidence >= min_conf &&
+            frame.laya_decision.score_grade >= min_score) {
 
             // Check if position already exists for this asset (strictly prevent duplicate stacking)
             bool already_open = false;
@@ -348,7 +354,6 @@ void ZMQListenerWorker::ProcessMessagePayload(const std::string& json_payload, i
             // Institutional Spacing Latch: minimum 300 seconds (5 minutes) between automated dispatches
             static std::chrono::steady_clock::time_point last_dispatch_time =
                 std::chrono::steady_clock::now() - std::chrono::seconds(600);
-            auto now_time = std::chrono::steady_clock::now();
             auto elapsed_sec = std::chrono::duration_cast<std::chrono::seconds>(now_time - last_dispatch_time).count();
 
             if (!already_open && elapsed_sec >= 300) {
@@ -365,6 +370,19 @@ void ZMQListenerWorker::ProcessMessagePayload(const std::string& json_payload, i
                     std::string cmd = "{\"command\":\"EXECUTE\",\"symbol\":\"" + frame.symbol + "\",\"action\":\"" + frame.laya_decision.choice_action + "\"}\n";
                     send(sock, cmd.c_str(), (int)cmd.size(), 0);
                 }
+            }
+        } else if (state_.GetEngineState() == EngineState::ARMED) {
+            // Periodic scanning status heartbeat every 45 seconds to keep user informed of AI gating
+            static std::chrono::steady_clock::time_point last_heartbeat =
+                std::chrono::steady_clock::now() - std::chrono::seconds(40);
+            auto hb_sec = std::chrono::duration_cast<std::chrono::seconds>(now_time - last_heartbeat).count();
+            if (hb_sec >= 45) {
+                last_heartbeat = now_time;
+                std::stringstream ss;
+                ss << "[AI SCANNING] " << frame.symbol << " | Decision: " << frame.laya_decision.choice_action
+                   << " (" << (int)(frame.laya_decision.choice_confidence * 100) << "%) | Grade: "
+                   << frame.laya_decision.score_grade << "/10.0 (Target: >= " << min_score << ") | Awaiting Setup Confluence";
+                state_.AddLog("INFO", ss.str());
             }
         }
     } else {
