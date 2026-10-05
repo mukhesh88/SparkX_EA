@@ -151,6 +151,7 @@ class MT5DataIngestionService:
         self.is_live = False
         self.data_source = "TRADINGVIEW_LIVE"
         self.tv_feed = TradingViewRealDataFeed()
+        self._cache_mt5_bars: Dict[str, Tuple[float, List[Bar]]] = {}
         self._check_mt5_connection()
 
     def _check_mt5_connection(self):
@@ -203,8 +204,16 @@ class MT5DataIngestionService:
         )
 
     def fetch_bars(self, symbol: str, timeframe_str: str, count: int = 60) -> List[Bar]:
-        """Fetches OHLCV bars from MT5 or Live TradingView/Interbank Feed."""
+        """Fetches OHLCV bars from MT5 or Live TradingView/Interbank Feed with high-frequency caching."""
+        now = time.time()
+        cache_key = f"mt5_{symbol}_{timeframe_str}_{count}"
         if self.is_live and MT5_AVAILABLE:
+            if hasattr(self, "_cache_mt5_bars") and cache_key in self._cache_mt5_bars:
+                ts, cached = self._cache_mt5_bars[cache_key]
+                ttl = 1.0 if timeframe_str == "M5" else 5.0
+                if (now - ts) < ttl:
+                    return cached
+
             mt5.symbol_select(symbol, True)
             tf_map = {
                 "M5": mt5.TIMEFRAME_M5,
@@ -225,6 +234,8 @@ class MT5DataIngestionService:
                         close=float(r['close']),
                         volume=float(r['tick_volume'])
                     ))
+                if hasattr(self, "_cache_mt5_bars"):
+                    self._cache_mt5_bars[cache_key] = (now, bars)
                 return bars
 
         # Fallback to Live TradingView & Interbank Spot Feed

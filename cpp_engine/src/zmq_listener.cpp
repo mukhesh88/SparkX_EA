@@ -325,10 +325,20 @@ void ZMQListenerWorker::ProcessMessagePayload(const std::string& json_payload, i
             frame.laya_decision.choice_confidence >= 0.85f &&
             frame.laya_decision.score_grade >= 7.5f) {
 
-            // Check if position already exists for this symbol (strictly prevent duplicate stacking)
+            // Check if position already exists for this asset (strictly prevent duplicate stacking)
             bool already_open = false;
+            auto is_same_asset = [](const std::string& a, const std::string& b) {
+                if (a == b) return true;
+                bool a_gold = a.find("XAU") != std::string::npos || a.find("GOLD") != std::string::npos;
+                bool b_gold = b.find("XAU") != std::string::npos || b.find("GOLD") != std::string::npos;
+                if (a_gold && b_gold) return true;
+                bool a_btc = a.find("BTC") != std::string::npos;
+                bool b_btc = b.find("BTC") != std::string::npos;
+                if (a_btc && b_btc) return true;
+                return false;
+            };
             for (const auto& pos : state_.GetPositions()) {
-                if (pos.symbol == frame.symbol) {
+                if (is_same_asset(pos.symbol, frame.symbol)) {
                     already_open = true;
                     break;
                 }

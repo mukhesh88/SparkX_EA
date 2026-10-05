@@ -28,6 +28,28 @@ SETTINGS_PATH = os.path.join(ROOT_DIR, "config", "trade_settings.json")
 HISTORY_PATH = os.path.join(ROOT_DIR, "config", "trade_history.json")
 
 
+def is_same_financial_asset(sym1: str, sym2: str) -> bool:
+    """Matches base symbols regardless of broker suffixes (e.g. XAUUSD == XAUUSDm == GOLD)."""
+    s1 = str(sym1).upper().strip()
+    s2 = str(sym2).upper().strip()
+    if not s1 or not s2:
+        return False
+    if s1 == s2:
+        return True
+    is_gold1 = "XAU" in s1 or "GOLD" in s1
+    is_gold2 = "XAU" in s2 or "GOLD" in s2
+    if is_gold1 and is_gold2:
+        return True
+    is_btc1 = "BTC" in s1
+    is_btc2 = "BTC" in s2
+    if is_btc1 and is_btc2:
+        return True
+    # Strip common broker suffixes
+    base1 = s1.split('.')[0].rstrip('m_ic')
+    base2 = s2.split('.')[0].rstrip('m_ic')
+    return base1 == base2
+
+
 class TradeManager:
     """Manages active trade state, historical fills, settings, and PnL."""
 
@@ -297,13 +319,14 @@ class TradeManager:
         if not self.settings.get("auto_trade_enabled", True):
             return False, "Auto-trading is disabled in settings"
 
-        # 2. Maximum 1 active position per symbol (strictly eliminates duplicate orders)
-        symbol_pos = [p for p in open_positions if p.get("symbol") == symbol]
+        # 2. Maximum 1 active position per asset (strictly eliminates duplicate orders and stacking)
+        symbol_pos = [p for p in open_positions if is_same_financial_asset(p.get("symbol", ""), symbol)]
         if len(symbol_pos) >= 1:
             ticket = symbol_pos[0].get('ticket', 'N/A')
-            return False, f"Position already active for {symbol} (Ticket #{ticket}). Max allowed: 1 per symbol."
+            sym_name = symbol_pos[0].get('symbol', symbol)
+            return False, f"Position already active for asset {symbol} (Ticket #{ticket} on {sym_name}). Max allowed: 1 per asset."
 
-        max_allowed = int(self.settings.get("max_open_positions", 2))
+        max_allowed = int(self.settings.get("max_open_positions", 1))
         if len(open_positions) >= max_allowed:
             return False, f"Maximum total portfolio positions reached ({len(open_positions)}/{max_allowed})"
 
@@ -371,7 +394,8 @@ class TradeManager:
     def get_positions(self, is_live_broker: bool, current_price: float, symbol: str = "XAUUSD") -> List[Dict[str, Any]]:
         """Returns live active positions from MT5 or the simulated tracker."""
         if is_live_broker and MT5_AVAILABLE and mt5 is not None:
-            raw_pos = mt5.positions_get(symbol=symbol) or mt5.positions_get() or ()
+            # Query all open positions across the MT5 account to prevent missing broker-suffixed symbols
+            raw_pos = mt5.positions_get() or ()
             positions = []
             current_live_tickets = set()
             for p in raw_pos:

@@ -104,28 +104,28 @@ static BackendHandle LaunchPythonBackend(const std::string& workspace_dir) {
     namespace fs = std::filesystem;
     fs::path ws(workspace_dir);
 
-    // 1. Check for standalone compiled backend binary
-    std::vector<fs::path> backend_candidates = {
-        ws / "dist" / "SparkX_Backend" / "SparkX_Backend.exe",
-        ws / "SparkX_Backend.exe",
-        ws / "build" / "SparkX_Backend.exe",
-        ws / "SparkX_Backend" / "SparkX_Backend.exe"
-    };
-
     std::string cmd;
-    for (const auto& candidate : backend_candidates) {
-        if (fs::exists(candidate)) {
-            cmd = "\"" + candidate.string() + "\" --interval 0.5";
-            std::cout << "[BackendManager] Found standalone backend binary: " << candidate.string() << std::endl;
-            break;
-        }
-    }
-
-    if (cmd.empty()) {
-        fs::path venv_python = ws / ".venv" / "Scripts" / "python.exe";
+    fs::path script = ws / "python_node" / "publisher.py";
+    fs::path venv_python = ws / ".venv" / "Scripts" / "python.exe";
+    if (fs::exists(script)) {
         std::string python_bin = fs::exists(venv_python) ? venv_python.string() : "python.exe";
-        fs::path script = ws / "python_node" / "publisher.py";
         cmd = "\"" + python_bin + "\" \"" + script.string() + "\" --interval 0.5";
+        std::cout << "[BackendManager] Found live Python script: " << script.string() << std::endl;
+    } else {
+        // Fallback to standalone compiled binary if python script is not present
+        std::vector<fs::path> backend_candidates = {
+            ws / "dist" / "SparkX_Backend" / "SparkX_Backend.exe",
+            ws / "SparkX_Backend.exe",
+            ws / "build" / "SparkX_Backend.exe",
+            ws / "SparkX_Backend" / "SparkX_Backend.exe"
+        };
+        for (const auto& candidate : backend_candidates) {
+            if (fs::exists(candidate)) {
+                cmd = "\"" + candidate.string() + "\" --interval 0.5";
+                std::cout << "[BackendManager] Found standalone backend binary: " << candidate.string() << std::endl;
+                break;
+            }
+        }
     }
 
     std::cout << "[BackendManager] Spawning backend: " << cmd << " (CWD: " << workspace_dir << ")" << std::endl;

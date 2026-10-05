@@ -139,6 +139,8 @@ class ZMQMarketPublisher:
         self.ingestion = MT5DataIngestionService(self.config.symbols)
         self.gateway = MT5ExecutionGateway(self.config.risk, simulation_mode=False)
         self.last_trade_time = 0.0
+        self.order_lock = threading.Lock()
+        self._order_in_flight = False
         self.last_receipt: Optional[ExecutionReceipt] = None
         self.last_price: Dict[str, float] = {}
         self.last_features: Dict[str, SMCFeatures] = {}
@@ -218,69 +220,86 @@ class ZMQMarketPublisher:
             )
             logger.info("[TEST ALERT] Dispatched verification ping to Discord/Telegram.")
         elif cmd_type == "EXECUTE" or ("BUY" in action or "SELL" in action):
-            cur_px = self.last_price.get(symbol, 4185.0)
-            open_pos = trade_manager.get_positions(self.ingestion.is_live, cur_px, symbol)
-
-            feat = self.last_features.get(symbol)
-            feat_dict = feat.to_dict() if feat and hasattr(feat, "to_dict") else None
-            allowed, reason = trade_manager.can_enter_trade(symbol, action, cur_px, open_pos, features=feat_dict)
-            if not allowed:
-                logger.warning(f"[GATE REJECTED] Execution blocked for {symbol} {action}: {reason}")
+            if self._order_in_flight:
+                logger.warning(f"[CONCURRENT ORDER BLOCKED] Another order is currently in-flight. Ignoring concurrent {action} {symbol}")
                 return
 
-            sl_pts = float(trade_manager.settings.get("sl_points", 4.5))
-            tp_pts = float(trade_manager.settings.get("tp_points", 12.0))
-            vol = float(trade_manager.settings.get("fixed_lot_size", 0.10))
+            with self.order_lock:
+                self._order_in_flight = True
+                try:
+                    cur_px = self.last_price.get(symbol, 4185.0)
+                    open_pos = trade_manager.get_positions(self.ingestion.is_live, cur_px, symbol)
 
-            if self.ingestion.is_live:
-                receipt = self.gateway.execute_live_order(
-                    symbol=symbol,
-                    action=action,
-                    sl_points=sl_pts,
-                    tp_points=tp_pts,
-                    lot_size=vol,
-                    comment="SparkX_Laya_Live"
-                )
-            else:
-                is_b = "BUY" in action.upper()
-                sl_p = round(cur_px - sl_pts if is_b else cur_px + sl_pts, 2)
-                tp_p = round(cur_px + tp_pts if is_b else cur_px - tp_pts, 2)
-                sim_ticket = trade_manager.add_simulated_position(
-                    symbol=symbol, action=action, price=cur_px, volume=vol, sl=sl_p, tp=tp_p, comment="SparkX_Laya_Sim"
-                )
-                receipt = ExecutionReceipt(
-                    executed=True, order_id=sim_ticket, symbol=symbol, action=action,
-                    price=cur_px, volume=vol, sl=sl_p, tp=tp_p, retcode=10009,
-                    status_message="SUCCESS_SIMULATED_ORDER_FILLED", latency_ms=0.5
-                )
+                    feat = self.last_features.get(symbol)
+                    feat_dict = feat.to_dict() if feat and hasattr(feat, "to_dict") else None
+                    allowed, reason = trade_manager.can_enter_trade(symbol, action, cur_px, open_pos, features=feat_dict)
+                    if not allowed:
+                        logger.warning(f"[GATE REJECTED] Execution blocked for {symbol} {action}: {reason}")
+                        return
 
-            self.last_receipt = receipt
-            if receipt.executed:
-                trade_manager.record_trade_executed(symbol, action, receipt.price)
-                cs = self.last_compressed_state.get(symbol, "")
-                trade_manager.record_trade_snapshot(
-                    ticket=receipt.order_id,
-                    symbol=symbol,
-                    action=action,
-                    price=receipt.price,
-                    sl=receipt.sl,
-                    tp=receipt.tp,
-                    compressed_state=cs,
-                    features=feat_dict or {}
-                )
-                self.last_trade_time = time.time()
-                logger.info(f"[ORDER EXECUTED] Ticket #{receipt.order_id} {action} {receipt.volume} {symbol} @ {receipt.price}")
-                mobile_notifier.send_trade_signal(
-                    symbol=symbol,
-                    action=action,
-                    price=receipt.price,
-                    sl=receipt.sl,
-                    tp=receipt.tp,
-                    score=9.2,
-                    confidence=0.94,
-                    reason=f"Laya AI Model Execution ({action})",
-                    order_id=receipt.order_id
-                )
+                    # Preemptively latch cooldown timestamps immediately to eliminate sub-millisecond race conditions
+                    now_ts = time.time()
+                    trade_manager.last_trade_time = now_ts
+                    self.last_trade_time = now_ts
+
+                    sl_pts = float(trade_manager.settings.get("sl_points", 4.5))
+                    tp_pts = float(trade_manager.settings.get("tp_points", 12.0))
+                    vol = float(trade_manager.settings.get("fixed_lot_size", 0.10))
+
+                    if self.ingestion.is_live:
+                        receipt = self.gateway.execute_live_order(
+                            symbol=symbol,
+                            action=action,
+                            sl_points=sl_pts,
+                            tp_points=tp_pts,
+                            lot_size=vol,
+                            comment="SparkX_Laya_Live"
+                        )
+                    else:
+                        is_b = "BUY" in action.upper()
+                        sl_p = round(cur_px - sl_pts if is_b else cur_px + sl_pts, 2)
+                        tp_p = round(cur_px + tp_pts if is_b else cur_px - tp_pts, 2)
+                        sim_ticket = trade_manager.add_simulated_position(
+                            symbol=symbol, action=action, price=cur_px, volume=vol, sl=sl_p, tp=tp_p, comment="SparkX_Laya_Sim"
+                        )
+                        receipt = ExecutionReceipt(
+                            executed=True, order_id=sim_ticket, symbol=symbol, action=action,
+                            price=cur_px, volume=vol, sl=sl_p, tp=tp_p, retcode=10009,
+                            status_message="SUCCESS_SIMULATED_ORDER_FILLED", latency_ms=0.5
+                        )
+
+                    self.last_receipt = receipt
+                    if receipt.executed:
+                        trade_manager.record_trade_executed(symbol, action, receipt.price)
+                        cs = self.last_compressed_state.get(symbol, "")
+                        trade_manager.record_trade_snapshot(
+                            ticket=receipt.order_id,
+                            symbol=symbol,
+                            action=action,
+                            price=receipt.price,
+                            sl=receipt.sl,
+                            tp=receipt.tp,
+                            compressed_state=cs,
+                            features=feat_dict or {}
+                        )
+                        logger.info(f"[ORDER EXECUTED] Ticket #{receipt.order_id} {action} {receipt.volume} {symbol} @ {receipt.price}")
+                        mobile_notifier.send_trade_signal(
+                            symbol=symbol,
+                            action=action,
+                            price=receipt.price,
+                            sl=receipt.sl,
+                            tp=receipt.tp,
+                            score=9.2,
+                            confidence=0.94,
+                            reason=f"Laya AI Model Execution ({action})",
+                            order_id=receipt.order_id
+                        )
+                    else:
+                        # Reset cooldown if execution failed so user or model can retry
+                        trade_manager.last_trade_time = 0.0
+                        self.last_trade_time = 0.0
+                finally:
+                    self._order_in_flight = False
 
     def generate_and_publish_frame(self, symbol: str):
         t0 = time.perf_counter()
