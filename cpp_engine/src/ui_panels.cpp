@@ -203,7 +203,22 @@ void RenderHeaderAndToggle(ThreadSafeAppState& state, const MarketFrame& frame) 
     ImGui::SetCursorPosY(ImGui::GetCursorPosY() + 8.0f);
 
     // Pill: Feed Source (MT5 Live or TradingView Live)
-    RenderPillBadge("Feed", is_mt5 ? "MT5 Live" : "TradingView Live", is_mt5 ? CyberpunkTheme::NEON_GREEN : CyberpunkTheme::NEON_CYAN);
+    std::string feed_badge_txt = "TradingView Live";
+    if (is_mt5) {
+        if (frame.feed_source.find("(") != std::string::npos) {
+            feed_badge_txt = frame.feed_source;
+        } else {
+            feed_badge_txt = "MT5 Live";
+        }
+    }
+    RenderPillBadge("Feed", feed_badge_txt.c_str(), is_mt5 ? CyberpunkTheme::NEON_GREEN : CyberpunkTheme::NEON_CYAN);
+    if (ImGui::IsItemHovered()) {
+        if (is_mt5) {
+            ImGui::SetTooltip("Connected to MetaTrader 5 Broker Engine via Windows IPC.\nDetails: %s\nQuotes and orders stream directly through your MT5 account.", frame.feed_source.c_str());
+        } else {
+            ImGui::SetTooltip("Connected to Real-Time TradingView & Interbank Spot Feed\nMT5 Terminal is offline.");
+        }
+    }
     ImGui::SameLine();
 
     // If MT5 is not connected, provide a prominent 1-click installer button

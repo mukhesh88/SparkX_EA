@@ -507,32 +507,51 @@ class TradeManager:
         """Returns completed trades merged from MT5 deals and local journal."""
         if is_live_broker and MT5_AVAILABLE and mt5 is not None:
             now_dt = datetime.now(timezone.utc)
-            from_dt = now_dt - timedelta(days=7)
+            from_dt = now_dt - timedelta(days=90)
             deals = mt5.history_deals_get(from_dt, now_dt)
             if deals:
                 live_deals = []
                 for d in reversed(deals):
                     # Only entry OUT (closed deals) or deals with realized profit
-                    if d.entry in (1, 2) or d.profit != 0:
+                    if d.entry in (1, 2) or (d.profit != 0 and d.symbol):
+                        open_px = float(d.price)
+                        pos_deals = mt5.history_deals_get(position=d.position_id)
+                        if pos_deals and len(pos_deals) > 0:
+                            open_px = float(pos_deals[0].price)
+
+                        # Determine original trade direction
+                        action = "BUY" if d.type == 0 else "SELL"
+                        if d.entry == 1:
+                            action = "SELL" if d.type == 0 else "BUY"
+
+                        comment_str = str(d.comment).strip()
+                        if not comment_str:
+                            comment_str = "Take Profit Hit" if d.profit > 0 else "Market Exit"
+
                         live_deals.append({
                             "ticket": int(d.ticket),
+                            "position_id": int(d.position_id),
                             "time": int(d.time),
                             "time_str": datetime.fromtimestamp(d.time, timezone.utc).strftime("%m-%d %H:%M"),
                             "symbol": d.symbol,
-                            "type": "BUY" if d.type == 0 else "SELL",
-                            "volume": round(d.volume, 2),
-                            "price_open": round(d.price, 2),
-                            "price_close": round(d.price, 2),
-                            "profit": round(d.profit, 2),
+                            "type": action,
+                            "volume": round(float(d.volume), 2),
+                            "price_open": round(open_px, 2),
+                            "price_close": round(float(d.price), 2),
+                            "profit": round(float(d.profit), 2),
                             "outcome": "WIN" if d.profit >= 0 else "LOSS",
-                            "comment": str(d.comment)
+                            "comment": comment_str
                         })
-                        if len(live_deals) >= 40:
+                        if len(live_deals) >= 60:
                             break
                 if live_deals:
+                    self.history = live_deals
+                    self._save_history()
                     return live_deals
 
-        return self.history[:50]
+        # Filter out test artifacts
+        filtered = [h for h in self.history if "Test" not in str(h.get("comment", ""))][:50]
+        return filtered
 
 
 trade_manager = TradeManager()

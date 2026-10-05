@@ -268,17 +268,18 @@ void ZMQListenerWorker::ProcessMessagePayload(const std::string& json_payload, i
     frame.ingest_latency_ms = static_cast<float>(ExtractJsonNumber(json_payload, "latency_ms", 0.5));
 
     frame.is_live_feed = ExtractJsonBool(json_payload, "is_live", true);
-    std::string ds = ExtractJsonString(json_payload, "data_source");
-    frame.feed_source = ExtractJsonString(json_payload, "broker");
-    if (!ds.empty()) {
+    std::string broker = ExtractJsonString(json_payload, "broker");
+    if (!broker.empty()) {
+        frame.feed_source = broker;
+    } else {
+        std::string ds = ExtractJsonString(json_payload, "data_source");
         if (ds == "TRADINGVIEW_LIVE") {
             frame.feed_source = "TRADINGVIEW REAL SPOT";
         } else if (ds == "MT5_LIVE") {
             frame.feed_source = "MT5 LIVE BROKER";
+        } else {
+            frame.feed_source = frame.is_live_feed ? "MT5 LIVE BROKER" : "TRADINGVIEW REAL SPOT";
         }
-    }
-    if (frame.feed_source.empty()) {
-        frame.feed_source = frame.is_live_feed ? "MT5 LIVE BROKER" : "TRADINGVIEW REAL SPOT";
     }
 
     // Bias

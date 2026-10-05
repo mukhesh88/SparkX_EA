@@ -323,12 +323,14 @@ class ZMQMarketPublisher:
         equity = 100000.0
         balance = 100000.0
         login = 0
+        server_name = "Demo"
         if self.ingestion.is_live and mt5 is not None:
             acc_info = mt5.account_info()
             if acc_info:
                 equity = acc_info.equity
                 balance = acc_info.balance
                 login = acc_info.login
+                server_name = acc_info.server
 
         # 4. Autonomous Institutional Execution Centralization:
         # In SparkX architecture, all trade decisions and setup grading are performed by
@@ -342,6 +344,8 @@ class ZMQMarketPublisher:
         token_count = MarketStateCompressor.estimate_tokens(compressed_state)
         self.last_compressed_state[symbol] = compressed_state
 
+        broker_label = f"MT5 LIVE ({server_name} #{login})" if (self.ingestion.is_live and login > 0) else ("MT5 LIVE BROKER" if self.ingestion.is_live else "TRADINGVIEW REAL SPOT")
+
         # 6. Construct payload
         payload = {
             "symbol": symbol,
@@ -350,7 +354,7 @@ class ZMQMarketPublisher:
             "is_live": True,
             "mt5_connected": self.ingestion.is_live,
             "data_source": self.ingestion.data_source,
-            "broker": "MT5 LIVE BROKER" if self.ingestion.is_live else "TRADINGVIEW REAL SPOT",
+            "broker": broker_label,
             "price": features.current_price,
             "bid": round(bid, 2),
             "ask": round(ask, 2),
