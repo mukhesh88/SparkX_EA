@@ -3,6 +3,60 @@
     "ticket": 777123,
     "symbol": "XAUUSD",
     "direction": "BUY",
+    "open_time": 1791177098.5574496,
+    "close_time": 1791177098.5574496,
+    "duration_sec": 1.0,
+    "entry_price": 2750.0,
+    "exit_price": 2745.0,
+    "sl_price": 2745.5,
+    "tp_price": 2762.0,
+    "pnl": -50.0,
+    "root_cause": "HTF_TREND_CONFLICT",
+    "primary_failure": "H1 Macro Bearish Flow Overwhelmed Lower-Timeframe Long",
+    "detailed_diagnosis": "Long setup entered at $2750.00 while H1 macro trend was BEARISH. Counter-trend retracement was rejected by higher-timeframe order flow, forcing price down to SL $2745.00.",
+    "rectification_rule": "Forbid BUY executions whenever H1 macro trend is BEARISH; require strict HTF alignment.",
+    "counterfactual_choice": 4,
+    "counterfactual_score": 2.05,
+    "counterfactual_noul": [
+      0.0,
+      0.0,
+      0.0
+    ],
+    "compressed_state": "<MKT_STATE sym='XAUUSD' session='NY_OVERLAP' px='2750.00' atr='2.45'>\n  <BIAS h1='BEARISH' m15='BOS_BEARISH' m5='MSS_BEARISH' zone='PREMIUM' fib='78.2%' />\n  <LIQ asia_hi='2760.00' asia_lo='2735.00' bsl_swept='F' ssl_swept='F' BSL_TGT:2760.00 | SSL_TGT:2735.00 />\n  <ARRAYS fvg='FVG:S:2752.00-2754.00' ob='OB:S:2755.00-2758.00' />\n  <MOMENTUM disp='F' vol_exp='F' />\n</MKT_STATE>",
+    "snapshot_features": {
+      "h1_trend": "BEARISH",
+      "m15_structure": "BOS_BEARISH",
+      "m5_structure": "MSS_BEARISH",
+      "price_zone": "PREMIUM",
+      "asian_liquidity": {
+        "swept_high": false,
+        "swept_low": false,
+        "high": 2760.0,
+        "low": 2735.0
+      },
+      "bsl_swept": false,
+      "ssl_swept": false,
+      "active_m5_fvg": {
+        "direction": "BEARISH",
+        "top": 2754.0,
+        "bottom": 2752.0
+      },
+      "active_m5_ob": {
+        "direction": "BEARISH",
+        "top": 2758.0,
+        "bottom": 2755.0
+      },
+      "displacement_detected": false,
+      "volume_expansion": false,
+      "nearest_bsl_target": 2760.0,
+      "nearest_ssl_target": 2735.0,
+      "current_price": 2750.0
+    }
+  },
+  {
+    "ticket": 777123,
+    "symbol": "XAUUSD",
+    "direction": "BUY",
     "open_time": 1791176836.4661148,
     "close_time": 1791176836.4661148,
     "duration_sec": 1.0,
