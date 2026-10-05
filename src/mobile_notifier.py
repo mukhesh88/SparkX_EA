@@ -125,6 +125,24 @@ class MobileAlertDispatcher:
 
             self._send_discord({"embeds": [embed]})
 
+    def send_custom_notification(self, title: str, message: str, color: int = 0xFFAA00):
+        """Dispatches an institutional diagnostic/system alert via Telegram and Discord."""
+        if not (self.telegram_enabled or self.discord_enabled):
+            return
+
+        if self.telegram_enabled and self.telegram_token and self.telegram_chat_id:
+            tg_text = f"<b>{title}</b>\n\n{message}"
+            self._send_telegram(tg_text)
+
+        if self.discord_enabled and self.discord_webhook:
+            embed = {
+                "title": title,
+                "description": message,
+                "color": color,
+                "footer": {"text": "SparkX EA // Laya Self-Correction Pipeline"}
+            }
+            self._send_discord({"embeds": [embed]})
+
     def _send_telegram(self, html_text: str):
         url = f"https://api.telegram.org/bot{self.telegram_token}/sendMessage"
         payload = json.dumps({

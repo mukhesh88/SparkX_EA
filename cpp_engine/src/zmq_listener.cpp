@@ -152,6 +152,28 @@ static std::vector<std::string> ExtractJsonArray(const std::string& json, const 
 }
 
 void ZMQListenerWorker::ProcessMessagePayload(const std::string& json_payload, int sock) {
+    // Check if this is an event broadcast (e.g., SL Retrain complete or settings update)
+    std::string evt = ExtractJsonString(json_payload, "event");
+    if (evt == "SL_RETRAIN_COMPLETE") {
+        std::string rc = ExtractJsonString(json_payload, "root_cause");
+        std::string rect = ExtractJsonString(json_payload, "rectification");
+        double loss = ExtractJsonNumber(json_payload, "loss", 0.0);
+        int samples = (int)ExtractJsonNumber(json_payload, "samples_trained", 0);
+        double ticket = ExtractJsonNumber(json_payload, "ticket", 0);
+
+        std::stringstream ss;
+        ss << "[SL RETRAIN COMPLETED] Ticket #" << (uint64_t)ticket << " | Failure: " << rc 
+           << " | Rectification: " << rect << " | Loss: " << loss << " (" << samples << " samples)";
+        state_.AddLog("ALERT", ss.str());
+
+        // Hot-reload the newly exported weights into ONNX Runtime session
+        bool reloaded = onnx_.ReloadModel();
+        if (reloaded) {
+            state_.AddLog("EXEC", "[Laya Neural Engine] Retrained ONNX weights successfully hot-reloaded into live inference pipeline.");
+        }
+        return;
+    }
+
     MarketFrame frame;
 
     // Flush any pending commands queued from C++ UI
@@ -287,6 +309,12 @@ void ZMQListenerWorker::ProcessMessagePayload(const std::string& json_payload, i
     frame.arrays.fvg_direction = ExtractJsonString(json_payload, "fvg_direction");
     frame.arrays.ob_active = ExtractJsonBool(json_payload, "ob_active", false);
     frame.arrays.ob_direction = ExtractJsonString(json_payload, "ob_direction");
+
+    // Adaptive SL Failure Attribution & Rectification
+    frame.adaptive_rectification = ExtractJsonString(json_payload, "adaptive_rectification");
+    if (frame.adaptive_rectification.empty()) frame.adaptive_rectification = "None";
+    frame.adaptive_root_cause = ExtractJsonString(json_payload, "adaptive_root_cause");
+    if (frame.adaptive_root_cause.empty()) frame.adaptive_root_cause = "NONE";
 
     // Evaluate real Laya ONNX inference on the received state
     if (state_.GetEngineState() != EngineState::EMERGENCY_KILL) {

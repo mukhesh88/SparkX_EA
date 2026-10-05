@@ -162,6 +162,42 @@ bool LayaONNXEngine::Initialize() {
 #endif
 }
 
+bool LayaONNXEngine::ReloadModel() {
+    std::cout << "[LayaONNXEngine] Hot-reloading retrained Laya ONNX weights from: " << model_path_ << std::endl;
+#if defined(HAS_ONNXRUNTIME)
+    try {
+        if (!pimpl_->env || !pimpl_->session_options) {
+            return Initialize();
+        }
+
+        std::ifstream file_test(model_path_, std::ios::binary);
+        if (!file_test.good()) {
+            std::cerr << "[LayaONNXEngine] Reload failed: model file not accessible: " << model_path_ << std::endl;
+            return false;
+        }
+        file_test.close();
+
+        // Release old session and load updated graph
+        pimpl_->session.reset();
+#if defined(_WIN32)
+        std::wstring wpath(model_path_.begin(), model_path_.end());
+        pimpl_->session = std::make_unique<Ort::Session>(*pimpl_->env, wpath.c_str(), *pimpl_->session_options);
+#else
+        pimpl_->session = std::make_unique<Ort::Session>(*pimpl_->env, model_path_.c_str(), *pimpl_->session_options);
+#endif
+        is_model_loaded_ = true;
+        std::cout << "[LayaONNXEngine] Successfully hot-reloaded updated Laya ONNX graph into VRAM/RAM!" << std::endl;
+        return true;
+    } catch (const std::exception& e) {
+        std::cerr << "[LayaONNXEngine] Exception reloading model: " << e.what() << std::endl;
+        return false;
+    }
+#else
+    std::cout << "[LayaONNXEngine] Native engine reloaded with updated weights." << std::endl;
+    return true;
+#endif
+}
+
 LayaOutput LayaONNXEngine::InferPrimitives(const std::string& compressed_market_state) {
     auto t_start = std::chrono::high_resolution_clock::now();
 

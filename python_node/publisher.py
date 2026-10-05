@@ -141,11 +141,17 @@ class ZMQMarketPublisher:
         self.last_trade_time = 0.0
         self.last_receipt: Optional[ExecutionReceipt] = None
         self.last_price: Dict[str, float] = {}
+        self.last_features: Dict[str, SMCFeatures] = {}
+        self.last_compressed_state: Dict[str, str] = {}
 
         self.smc_engines = {
             sym: SMCEngine(sym, point_value=0.01 if "XAU" in sym else 1.0)
             for sym in self.config.symbols
         }
+
+        # Connect online learner completion callback
+        from src.online_learner import online_learner
+        online_learner.on_retrain_complete = self.handle_retrain_complete
 
         # Initialize TCP Broadcaster with bidirectional command routing
         self.tcp_broadcaster = LocalTCPBroadcaster(
@@ -158,6 +164,11 @@ class ZMQMarketPublisher:
         self.socket.setsockopt(zmq.SNDHWM, 100)
         self.socket.bind(self.bind_address)
         logger.info(f"ZeroMQ PUB Socket bound to {self.bind_address}")
+
+    def handle_retrain_complete(self, result: dict):
+        """Dispatches model retrain events to connected C++ Engine via TCP."""
+        logger.info(f"Broadcasting SL_RETRAIN_COMPLETE to C++: {result}")
+        self.tcp_broadcaster.broadcast(result)
 
     def handle_client_command(self, cmd: dict):
         """Processes manual or ONNX gate execution triggers received from C++ UI."""
@@ -210,7 +221,9 @@ class ZMQMarketPublisher:
             cur_px = self.last_price.get(symbol, 4185.0)
             open_pos = trade_manager.get_positions(self.ingestion.is_live, cur_px, symbol)
 
-            allowed, reason = trade_manager.can_enter_trade(symbol, action, cur_px, open_pos)
+            feat = self.last_features.get(symbol)
+            feat_dict = feat.to_dict() if feat and hasattr(feat, "to_dict") else None
+            allowed, reason = trade_manager.can_enter_trade(symbol, action, cur_px, open_pos, features=feat_dict)
             if not allowed:
                 logger.warning(f"[GATE REJECTED] Execution blocked for {symbol} {action}: {reason}")
                 return
@@ -244,6 +257,17 @@ class ZMQMarketPublisher:
             self.last_receipt = receipt
             if receipt.executed:
                 trade_manager.record_trade_executed(symbol, action, receipt.price)
+                cs = self.last_compressed_state.get(symbol, "")
+                trade_manager.record_trade_snapshot(
+                    ticket=receipt.order_id,
+                    symbol=symbol,
+                    action=action,
+                    price=receipt.price,
+                    sl=receipt.sl,
+                    tp=receipt.tp,
+                    compressed_state=cs,
+                    features=feat_dict or {}
+                )
                 self.last_trade_time = time.time()
                 logger.info(f"[ORDER EXECUTED] Ticket #{receipt.order_id} {action} {receipt.volume} {symbol} @ {receipt.price}")
                 mobile_notifier.send_trade_signal(
@@ -271,6 +295,7 @@ class ZMQMarketPublisher:
         smc = self.smc_engines[symbol]
         features: SMCFeatures = smc.extract_features(bars_m5, bars_m15, bars_h1, spread_points=spread)
         self.last_price[symbol] = features.current_price
+        self.last_features[symbol] = features
 
         # 3. Query active account status & positions
         positions = trade_manager.get_positions(self.ingestion.is_live, features.current_price, symbol)
@@ -296,6 +321,7 @@ class ZMQMarketPublisher:
         # 5. Compress state into dense token-vector string (< 512 tokens)
         compressed_state = MarketStateCompressor.compress(features)
         token_count = MarketStateCompressor.estimate_tokens(compressed_state)
+        self.last_compressed_state[symbol] = compressed_state
 
         # 6. Construct payload
         payload = {
@@ -313,6 +339,9 @@ class ZMQMarketPublisher:
             "session": features.current_session,
             "token_count": token_count,
             "compressed_state": compressed_state,
+            "adaptive_rectification": trade_manager.adaptive_rectifications.get(symbol, "None"),
+            "adaptive_root_cause": trade_manager.adaptive_root_cause.get(symbol, "NONE"),
+            "last_post_mortem": trade_manager.last_post_mortem.get(symbol),
             "bias": {
                 "h1_trend": features.h1_trend,
                 "m15_struct": features.m15_structure,

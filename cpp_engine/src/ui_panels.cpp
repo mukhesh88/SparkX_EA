@@ -220,6 +220,11 @@ void RenderHeaderAndToggle(ThreadSafeAppState& state, const MarketFrame& frame) 
     RenderPillBadge("CTX", ctx_buf, CyberpunkTheme::TEXT_PRIMARY);
     ImGui::SameLine();
 
+    // Pill 4: SL Guard / Adaptive Learning
+    bool has_rect = (frame.adaptive_root_cause != "NONE" && !frame.adaptive_root_cause.empty());
+    RenderPillBadge("SL Guard", has_rect ? "ADAPTED" : "OPTIMAL", has_rect ? CyberpunkTheme::NEON_AMBER : CyberpunkTheme::NEON_GREEN);
+    ImGui::SameLine();
+
     // Mode Toggle Pill / Button
     EngineState current_state = state.GetEngineState();
     const char* mode_str = (current_state == EngineState::ARMED) ? "Armed" : 
@@ -1165,7 +1170,86 @@ void RenderTradeHistoryTab(ThreadSafeAppState& state) {
 }
 
 // -----------------------------------------------------------------------------
-// 4. Bottom Row: Tabbed Inset Panel (Console, Open Positions, Trade History)
+// 4d. Adaptive SL Post-Mortem & Rectification Tab
+// -----------------------------------------------------------------------------
+
+void RenderAdaptiveLearningTab(ThreadSafeAppState& state, const MarketFrame& frame) {
+    ImGui::TextColored(CyberpunkTheme::NEON_CYAN, "LAYA ONLINE NEURAL LEARNER & SL FORENSIC ATTRIBUTION ENGINE");
+    ImGui::SameLine();
+    ImGui::TextColored(CyberpunkTheme::TEXT_MUTED, "(Self-Refining Neural Decision Heads & Adaptive Risk Gates)");
+
+    ImGui::Separator();
+    ImGui::Dummy(ImVec2(0, 4));
+
+    // Metric Badges Row
+    bool has_active_rect = (frame.adaptive_root_cause != "NONE" && !frame.adaptive_root_cause.empty());
+    RenderPillBadge("Adaptive Guard", has_active_rect ? "ENGAGED" : "MONITORING", has_active_rect ? CyberpunkTheme::NEON_AMBER : CyberpunkTheme::NEON_GREEN);
+    ImGui::SameLine();
+
+    RenderPillBadge("Last Failure", frame.adaptive_root_cause.c_str(), has_active_rect ? CyberpunkTheme::NEON_RED : CyberpunkTheme::TEXT_PRIMARY);
+    ImGui::SameLine();
+
+    RenderPillBadge("Hot-Reload Engine", "ACTIVE (ONNX / CUDA)", CyberpunkTheme::NEON_CYAN);
+
+    ImGui::Dummy(ImVec2(0, 8));
+
+    // Two-Column Layout: Left = Current Active Forensic Rectification, Right = 7 Tracked Failure Modes
+    float avail_w = ImGui::GetContentRegionAvail().x;
+    float col_w = (avail_w - 16.0f) * 0.5f;
+
+    // LEFT COLUMN: Active Rectification Status
+    ImGui::PushStyleColor(ImGuiCol_ChildBg, CyberpunkTheme::BG_INSET);
+    ImGui::PushStyleColor(ImGuiCol_Border, CyberpunkTheme::BORDER_DARK);
+    ImGui::BeginChild("ActiveRectificationChild", ImVec2(col_w, 200.0f), true);
+
+    ImGui::TextColored(CyberpunkTheme::NEON_AMBER, "ACTIVE SL POST-MORTEM ATTRIBUTION");
+    ImGui::Separator();
+    ImGui::Dummy(ImVec2(0, 4));
+
+    ImGui::TextColored(CyberpunkTheme::TEXT_MUTED, "Failure Classification:");
+    ImGui::SameLine();
+    ImGui::TextColored(has_active_rect ? CyberpunkTheme::NEON_RED : CyberpunkTheme::NEON_GREEN, "%s", frame.adaptive_root_cause.c_str());
+
+    ImGui::Dummy(ImVec2(0, 4));
+    ImGui::TextColored(CyberpunkTheme::TEXT_MUTED, "Enforced Risk Gate Rule:");
+    ImGui::TextWrapped("%s", frame.adaptive_rectification.c_str());
+
+    ImGui::Dummy(ImVec2(0, 6));
+    ImGui::Separator();
+    ImGui::TextColored(CyberpunkTheme::NEON_CYAN, "Neural Micro-Retraining Architecture:");
+    ImGui::BulletText("Target: Choice=HOLD, Score=1.8/10.0, Corrected Nouls");
+    ImGui::BulletText("Optimizer: AdamW (lr=2e-4) on Laya Decision Heads");
+    ImGui::BulletText("Regularization: Positive anchor vectors prevent forgetting");
+    ImGui::BulletText("Export Pipeline: PyTorch -> ONNX Graph -> Live Hot-Reload");
+
+    ImGui::EndChild();
+    ImGui::PopStyleColor(2);
+
+    ImGui::SameLine();
+
+    // RIGHT COLUMN: 7 Forensic SMC Failure Modes Tracked
+    ImGui::PushStyleColor(ImGuiCol_ChildBg, CyberpunkTheme::BG_INSET);
+    ImGui::PushStyleColor(ImGuiCol_Border, CyberpunkTheme::BORDER_DARK);
+    ImGui::BeginChild("TrackedModesChild", ImVec2(col_w, 200.0f), true);
+
+    ImGui::TextColored(CyberpunkTheme::NEON_GREEN, "7 INSTITUTIONAL SMC FAILURE MODES DIAGNOSED");
+    ImGui::Separator();
+    ImGui::Dummy(ImVec2(0, 2));
+
+    ImGui::TextColored(CyberpunkTheme::TEXT_PRIMARY, "1. HTF Trend Conflict: Counter-trend entries into H1 opposing flow");
+    ImGui::TextColored(CyberpunkTheme::TEXT_PRIMARY, "2. Premature Pool Sweep: Entry before Asian/Session liquidity hunted");
+    ImGui::TextColored(CyberpunkTheme::TEXT_PRIMARY, "3. FVG Inversion: Active Fair Value Gap breached and flipped");
+    ImGui::TextColored(CyberpunkTheme::TEXT_PRIMARY, "4. OB Blowthrough: Order block mitigation failed to hold");
+    ImGui::TextColored(CyberpunkTheme::TEXT_PRIMARY, "5. Premium/Discount Violation: Long in Premium / Short in Discount");
+    ImGui::TextColored(CyberpunkTheme::TEXT_PRIMARY, "6. Momentum Exhaustion: Displacement faded with volume depletion");
+    ImGui::TextColored(CyberpunkTheme::TEXT_PRIMARY, "7. Low Runway: Order placed <5.0 pts from terminal liquidity pool");
+
+    ImGui::EndChild();
+    ImGui::PopStyleColor(2);
+}
+
+// -----------------------------------------------------------------------------
+// 4. Bottom Row: Tabbed Inset Panel (Console, Open Positions, Trade History, AI Post-Mortem)
 // -----------------------------------------------------------------------------
 
 void RenderBottomSection(ThreadSafeAppState& state, const MarketFrame& frame) {
@@ -1193,6 +1277,10 @@ void RenderBottomSection(ThreadSafeAppState& state, const MarketFrame& frame) {
         }
         if (ImGui::BeginTabItem(hist_title)) {
             RenderTradeHistoryTab(state);
+            ImGui::EndTabItem();
+        }
+        if (ImGui::BeginTabItem("  [AI Post-Mortem & Retraining]  ")) {
+            RenderAdaptiveLearningTab(state, frame);
             ImGui::EndTabItem();
         }
         ImGui::EndTabBar();

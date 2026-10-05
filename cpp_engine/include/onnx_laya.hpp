@@ -18,6 +18,9 @@ public:
     // Initializes Ort::Env, Ort::SessionOptions, CUDAExecutionProvider, and loads model weights
     bool Initialize();
 
+    // Reloads model weights dynamically from disk (e.g. after post-SL micro-retraining)
+    bool ReloadModel();
+
     bool IsGPUAccelerated() const { return gpu_accelerated_; }
     bool IsModelLoaded() const { return is_model_loaded_; }
     std::string GetProviderName() const { return provider_name_; }

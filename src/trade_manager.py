@@ -9,7 +9,10 @@ import json
 import time
 import logging
 from datetime import datetime, timezone, timedelta
-from typing import Dict, List, Any, Optional
+from typing import Dict, List, Any, Optional, Tuple
+
+from src.sl_analyzer import SLDiagnosticEngine, SLPostMortem
+from src.online_learner import online_learner
 
 try:
     import MetaTrader5 as mt5
@@ -39,6 +42,13 @@ class TradeManager:
         self.last_closed_time: float = 0.0
         self.last_closed_price: float = 0.0
         self.last_closed_symbol: str = ""
+
+        # Continuous Learning & SL Root Cause Tracking
+        self.trade_snapshots: Dict[int, Dict[str, Any]] = {}
+        self.tracked_live_tickets: set = set()
+        self.adaptive_root_cause: Dict[str, str] = {}
+        self.adaptive_rectifications: Dict[str, str] = {}
+        self.last_post_mortem: Dict[str, Any] = {}
 
     def _load_settings(self) -> Dict[str, Any]:
         defaults = {
@@ -125,8 +135,55 @@ class TradeManager:
         }
         self.simulated_positions.append(pos)
         self.last_trade_time = time.time()
+
+        # Record entry snapshot for forensic post-mortem
+        self.trade_snapshots[ticket] = {
+            "ticket": ticket,
+            "symbol": symbol,
+            "direction": pos["type"],
+            "open_time": time.time(),
+            "entry_price": float(price),
+            "sl_price": float(sl),
+            "tp_price": float(tp),
+            "volume": float(volume),
+            "compressed_state": comment if comment.startswith("<MKT_STATE>") else "",
+            "features": {},
+            "decision": {},
+            "min_price": float(price),
+            "max_price": float(price)
+        }
+
         logger.info(f"Added simulated position #{ticket} {action} {volume} {symbol} @ {price}")
         return ticket
+
+    def record_trade_snapshot(
+        self,
+        ticket: int,
+        symbol: str,
+        action: str,
+        price: float,
+        sl: float,
+        tp: float,
+        compressed_state: str = "",
+        features: Optional[Dict[str, Any]] = None,
+        decision: Optional[Dict[str, Any]] = None
+    ):
+        """Saves a rich entry flight-recorder snapshot for post-mortem forensics."""
+        self.trade_snapshots[ticket] = {
+            "ticket": ticket,
+            "symbol": symbol,
+            "direction": "BUY" if "BUY" in action.upper() else "SELL",
+            "open_time": time.time(),
+            "entry_price": float(price),
+            "sl_price": float(sl),
+            "tp_price": float(tp),
+            "compressed_state": compressed_state,
+            "features": features or {},
+            "decision": decision or {},
+            "min_price": float(price),
+            "max_price": float(price)
+        }
+        logger.info(f"Latched flight-recorder snapshot for #{ticket} {action} {symbol} @ ${price:.2f}")
 
     def record_trade_executed(self, symbol: str, action: str, price: float):
         """Records the timestamp and attributes of an executed trade."""
@@ -171,17 +228,67 @@ class TradeManager:
         self.last_closed_price = float(current_price)
         self.last_closed_symbol = pos["symbol"]
 
+        # Check for SL / Loss post-mortem and auto-retraining
+        snap = self.trade_snapshots.pop(ticket, None)
+        if hist_item["outcome"] == "LOSS":
+            entry_state = snap.get("compressed_state", "") if snap else ""
+            if not entry_state:
+                entry_state = f"<MKT_STATE> SYM:{pos['symbol']} | DIR:{pos['type']} | SL_HIT | EXIT:{current_price:.2f} </MKT_STATE>"
+
+            f_entry = snap.get("features", {}) if snap else {}
+            min_px = snap.get("min_price", min(pos["price_open"], current_price)) if snap else None
+            max_px = snap.get("max_price", max(pos["price_open"], current_price)) if snap else None
+
+            post_mortem = SLDiagnosticEngine.diagnose(
+                ticket=ticket,
+                symbol=pos["symbol"],
+                direction=pos["type"],
+                open_time=float(pos.get("time", time.time())),
+                close_time=time.time(),
+                entry_price=pos["price_open"],
+                exit_price=float(current_price),
+                sl_price=pos["sl"],
+                tp_price=pos["tp"],
+                pnl=pnl,
+                compressed_state=entry_state,
+                features_at_entry=f_entry,
+                min_price_during_trade=min_px,
+                max_price_during_trade=max_px
+            )
+            self.last_post_mortem[pos["symbol"]] = post_mortem.to_dict()
+            self.adaptive_root_cause[pos["symbol"]] = post_mortem.root_cause
+            self.adaptive_rectifications[pos["symbol"]] = post_mortem.rectification_rule
+
+            # Asynchronously queue for real-time model retraining
+            online_learner.enqueue_sl_event(post_mortem)
+        elif hist_item["outcome"] == "WIN" and snap:
+            if snap.get("compressed_state"):
+                online_learner.register_positive_trade(
+                    snap["compressed_state"],
+                    choice=0 if pos["type"] == "BUY" else 1,
+                    score=9.2,
+                    noul=[1.0, 1.0, 1.0]
+                )
+
         logger.info(f"Closed simulated position #{ticket} @ ${current_price:.2f} | PnL: ${pnl:.2f} ({hist_item['outcome']})")
         return hist_item
 
-    def can_enter_trade(self, symbol: str, action: str, price: float, open_positions: List[Dict[str, Any]]) -> Tuple[bool, str]:
+    def can_enter_trade(
+        self,
+        symbol: str,
+        action: str,
+        price: float,
+        open_positions: List[Dict[str, Any]],
+        features: Optional[Dict[str, Any]] = None
+    ) -> Tuple[bool, str]:
         """
-        Institutional Risk & Anti-Chasing Gate:
+        Institutional Risk, Anti-Chasing & Self-Correcting Adaptive Gate:
         Enforces professional discipline:
           1. Maximum 1 active position per symbol (no duplicate stacking).
           2. Minimum 180s setup spacing cooldown.
           3. Post-TP Anti-Chasing Hysteresis (blocks buying the top after TP).
           4. Post-SL Anti-Revenge Lockout (15-min cooldown after stop-loss).
+          5. Adaptive Rectification Gate (enforces specific SMC lesson learned from previous SL).
         """
         now = time.time()
         act_upper = "BUY" if "BUY" in action.upper() else "SELL"
@@ -210,7 +317,6 @@ class TradeManager:
             elapsed = now - self.last_closed_time
             if elapsed < 600.0:  # 10 minutes lockout after TP
                 if act_upper == "BUY" and self.last_closed_action == "BUY":
-                    # Must retrace at least 5.0 points below the TP exit
                     pullback_dist = self.last_closed_price - price
                     if pullback_dist < 5.0:
                         return False, (
@@ -219,7 +325,6 @@ class TradeManager:
                             f"Pullback so far: ${pullback_dist:.2f}. Waiting for market retracement."
                         )
                 elif act_upper == "SELL" and self.last_closed_action == "SELL":
-                    # Must retrace at least 5.0 points above the TP exit
                     pullback_dist = price - self.last_closed_price
                     if pullback_dist < 5.0:
                         return False, (
@@ -235,6 +340,32 @@ class TradeManager:
                 remaining = int(900.0 - elapsed)
                 return False, f"Post-SL Anti-Revenge Lockout: 15-min cooldown active after {act_upper} loss ({remaining}s remaining)"
 
+        # 6. Adaptive SL Rectification Gate:
+        # If previous trade hit SL, enforce the specific forensic lesson learned from the post-mortem
+        if symbol in self.adaptive_root_cause and features:
+            cause = self.adaptive_root_cause[symbol]
+            if cause == "HTF_TREND_CONFLICT":
+                h1_trend = str(features.get("h1_trend", "")).upper()
+                if act_upper == "BUY" and ("BEAR" in h1_trend or "RANGE" in h1_trend):
+                    return False, f"Adaptive SL Gate: Previous SL due to HTF Trend Conflict. BUY blocked while H1 is {h1_trend}."
+                if act_upper == "SELL" and ("BULL" in h1_trend or "RANGE" in h1_trend):
+                    return False, f"Adaptive SL Gate: Previous SL due to HTF Trend Conflict. SELL blocked while H1 is {h1_trend}."
+            elif cause == "LIQUIDITY_HUNT_SWEEP":
+                if act_upper == "BUY" and not features.get("ssl_swept", False):
+                    return False, "Adaptive SL Gate: Previous SL due to premature entry before SSL hunt. Awaiting verified sweep below Asian Low."
+                if act_upper == "SELL" and not features.get("bsl_swept", False):
+                    return False, "Adaptive SL Gate: Previous SL due to premature entry before BSL hunt. Awaiting verified sweep above Asian High."
+            elif cause == "PREMIUM_DISCOUNT_VIOLATION":
+                zone = str(features.get("price_zone", features.get("zone", ""))).upper()
+                if act_upper == "BUY" and "DISCOUNT" not in zone:
+                    return False, f"Adaptive SL Gate: Previous SL due to Pricing Violation. BUY blocked in {zone} zone."
+                if act_upper == "SELL" and "PREMIUM" not in zone:
+                    return False, f"Adaptive SL Gate: Previous SL due to Pricing Violation. SELL blocked in {zone} zone."
+            elif cause == "FVG_INVERSION_FAILURE":
+                disp = features.get("displacement", False)
+                if not disp:
+                    return False, "Adaptive SL Gate: Previous SL due to FVG Inversion. Institutional displacement required before taking next FVG setup."
+
         return True, "PASSED"
 
     def get_positions(self, is_live_broker: bool, current_price: float, symbol: str = "XAUUSD") -> List[Dict[str, Any]]:
@@ -242,9 +373,12 @@ class TradeManager:
         if is_live_broker and MT5_AVAILABLE and mt5 is not None:
             raw_pos = mt5.positions_get(symbol=symbol) or mt5.positions_get() or ()
             positions = []
+            current_live_tickets = set()
             for p in raw_pos:
+                t = int(p.ticket)
+                current_live_tickets.add(t)
                 positions.append({
-                    "ticket": int(p.ticket),
+                    "ticket": t,
                     "time": int(p.time),
                     "time_str": datetime.fromtimestamp(p.time, timezone.utc).strftime("%H:%M:%S"),
                     "symbol": p.symbol,
@@ -257,9 +391,22 @@ class TradeManager:
                     "profit": round(p.profit, 2),
                     "comment": str(p.comment)
                 })
+                # Update price envelopes in flight-recorder snapshot
+                if t in self.trade_snapshots:
+                    snap = self.trade_snapshots[t]
+                    cur_p = float(p.price_current)
+                    snap["min_price"] = min(snap.get("min_price", cur_p), cur_p)
+                    snap["max_price"] = max(snap.get("max_price", cur_p), cur_p)
+
+            # Check for live deals closed via SL
+            closed_live_tickets = self.tracked_live_tickets - current_live_tickets
+            for ct in closed_live_tickets:
+                self._check_and_process_live_deal_closure(ct)
+
+            self.tracked_live_tickets = current_live_tickets
             return positions
 
-        # Simulation mode: update floating PnL
+        # Simulation mode: update floating PnL and track price extremes
         updated = []
         to_close = []
         for p in self.simulated_positions:
@@ -269,6 +416,12 @@ class TradeManager:
             pnl = (px - p["price_open"]) * p["volume"] * 100.0 if is_buy else \
                   (p["price_open"] - px) * p["volume"] * 100.0
             p["profit"] = round(pnl, 2)
+
+            # Track price envelope in flight-recorder snapshot
+            if p["ticket"] in self.trade_snapshots:
+                snap = self.trade_snapshots[p["ticket"]]
+                snap["min_price"] = min(snap.get("min_price", px), px)
+                snap["max_price"] = max(snap.get("max_price", px), px)
 
             # Check SL / TP trigger
             if is_buy:
@@ -288,6 +441,43 @@ class TradeManager:
             self.close_simulated_position(ticket, trigger_px)
 
         return [p for p in updated if p["ticket"] not in [t[0] for t in to_close]]
+
+    def _check_and_process_live_deal_closure(self, ticket: int):
+        """Forensic inspection of deals in MT5 history when a live position closes."""
+        if not (MT5_AVAILABLE and mt5 is not None):
+            return
+        now_dt = datetime.now(timezone.utc)
+        deals = mt5.history_deals_get(now_dt - timedelta(hours=2), now_dt)
+        if not deals:
+            return
+        for d in reversed(deals):
+            if d.position_id == ticket and (d.entry in (1, 2) or d.profit != 0):
+                is_loss = d.profit < 0 or "[sl]" in str(d.comment).lower()
+                snap = self.trade_snapshots.pop(ticket, None)
+                if is_loss:
+                    entry_state = snap.get("compressed_state", "") if snap else f"<MKT_STATE> SYM:{d.symbol} | LIVE_SL_HIT </MKT_STATE>"
+                    post_mortem = SLDiagnosticEngine.diagnose(
+                        ticket=ticket,
+                        symbol=d.symbol,
+                        direction="BUY" if d.type == 1 else "SELL",
+                        open_time=snap.get("open_time", d.time - 300) if snap else (d.time - 300),
+                        close_time=float(d.time),
+                        entry_price=snap.get("entry_price", d.price) if snap else d.price,
+                        exit_price=float(d.price),
+                        sl_price=snap.get("sl_price", d.price) if snap else d.price,
+                        tp_price=snap.get("tp_price", d.price) if snap else d.price,
+                        pnl=float(d.profit),
+                        compressed_state=entry_state,
+                        features_at_entry=snap.get("features", {}) if snap else {},
+                        min_price_during_trade=snap.get("min_price") if snap else None,
+                        max_price_during_trade=snap.get("max_price") if snap else None
+                    )
+                    self.last_post_mortem[d.symbol] = post_mortem.to_dict()
+                    self.adaptive_root_cause[d.symbol] = post_mortem.root_cause
+                    self.adaptive_rectifications[d.symbol] = post_mortem.rectification_rule
+                    online_learner.enqueue_sl_event(post_mortem)
+                    logger.warning(f"[LIVE MT5 SL DETECTED] #{ticket} closed at loss ${d.profit:.2f}. Queued auto-retraining.")
+                break
 
     def get_history(self, is_live_broker: bool) -> List[Dict[str, Any]]:
         """Returns completed trades merged from MT5 deals and local journal."""

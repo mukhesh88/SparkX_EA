@@ -86,6 +86,8 @@ struct MarketFrame {
     bool is_fresh = false;
     bool is_live_feed = false;
     std::string feed_source = "SYNTHETIC";
+    std::string adaptive_rectification = "None";
+    std::string adaptive_root_cause = "NONE";
 };
 
 struct ConsoleLogEntry {
