@@ -215,6 +215,7 @@ LayaOutput LayaONNXEngine::InferPrimitives(const std::string& compressed_market_
     std::vector<float> choice_logits = { -2.0f, -2.0f, -1.0f, -1.0f, 4.5f };
     float onnx_score_raw = -1.0f;
     bool has_score_raw = false;
+    bool onnx_choice_extracted = false;
 
 #if defined(HAS_ONNXRUNTIME)
     if (is_model_loaded_ && pimpl_->session) {
@@ -253,7 +254,10 @@ LayaOutput LayaONNXEngine::InferPrimitives(const std::string& compressed_market_
             // Node 0: Choice logits [1, 5]
             if (output_tensors.size() > 0) {
                 float* choice_raw = output_tensors[0].GetTensorMutableData<float>();
-                choice_logits.assign(choice_raw, choice_raw + 5);
+                if (choice_raw) {
+                    choice_logits.assign(choice_raw, choice_raw + 5);
+                    onnx_choice_extracted = true;
+                }
             }
 
             // Node 1: Score regression / logits [1, 1]
@@ -350,47 +354,51 @@ LayaOutput LayaONNXEngine::InferPrimitives(const std::string& compressed_market_
         bear_score = -10;
     }
 
-    // Condition logits with SMC Institutional Trader Engine
-    if (choice_logits.size() < 5) {
-        choice_logits = { -3.0f, -3.0f, -2.0f, -2.0f, 5.0f };
+    // Dynamic synthesis of Choice Logits:
+    // Blend real ONNX model outputs with SMC institutional confluence,
+    // ensuring the distribution breathes and updates dynamically in real time.
+    if (!onnx_choice_extracted) {
+        // High-fidelity dynamic surrogate logits calculated from live market state
+        float base_buy = (is_discount ? 1.0f : -1.2f) + (ssl_swept ? 2.5f : 0.0f) + (disp ? 1.4f : -0.3f) + (bull_fvg ? 0.9f : 0.0f) + (h1_bull ? 1.2f : (h1_bear ? -1.2f : 0.0f));
+        float base_sell = (is_premium ? 1.0f : -1.2f) + (bsl_swept ? 2.5f : 0.0f) + (disp ? 1.4f : -0.3f) + (bear_fvg ? 0.9f : 0.0f) + (h1_bear ? 1.2f : (h1_bull ? -1.2f : 0.0f));
+        float base_lim_b = bull_ob ? 1.2f : -0.8f;
+        float base_lim_s = bear_ob ? 1.2f : -0.8f;
+        float base_hold = 1.0f + (!disp ? 1.0f : -0.8f) + (!vol_exp ? 0.8f : -0.5f);
+
+        if (buy_vetoed) base_buy -= 2.5f;
+        if (sell_vetoed) base_sell -= 2.5f;
+
+        choice_logits = { base_buy, base_sell, base_lim_b, base_lim_s, base_hold };
+    } else {
+        // Real ONNX model logits: Apply institutional SMC Bayesian shifts
+        if (bull_score > 0) choice_logits[0] += (bull_score * 0.25f);
+        if (bear_score > 0) choice_logits[1] += (bear_score * 0.25f);
+        if (bull_ob) choice_logits[2] += 0.8f;
+        if (bear_ob) choice_logits[3] += 0.8f;
+        if (buy_vetoed) choice_logits[0] -= 2.2f;
+        if (sell_vetoed) choice_logits[1] -= 2.2f;
+        if (bull_score < 6 && bear_score < 6) choice_logits[4] += 0.6f;
     }
 
-    // Reset baselines favoring HOLD in the absence of institutional setups
-    choice_logits[0] = -3.0f; // BUY
-    choice_logits[1] = -3.0f; // SELL
-    choice_logits[2] = -2.0f; // LIMIT_BUY_OB
-    choice_logits[3] = -2.0f; // LIMIT_SELL_OB
-    choice_logits[4] = 4.5f;  // HOLD
-
-    float setup_grade = 3.5f;
-
+    // High conviction execution thresholds:
     if (bull_score >= 8 && !buy_vetoed) {
         if (bull_ob && !ssl_swept && !disp) {
-            choice_logits[2] = 5.5f + (bull_score - 8) * 0.5f;
-            choice_logits[0] = 1.0f;
-            choice_logits[4] = -1.0f;
+            choice_logits[2] += 3.5f;
+            choice_logits[0] += 1.5f;
+            choice_logits[4] -= 2.5f;
         } else {
-            choice_logits[0] = 6.0f + (bull_score - 8) * 0.5f;
-            choice_logits[2] = 2.0f;
-            choice_logits[4] = -2.0f;
+            choice_logits[0] += 4.5f;
+            choice_logits[4] -= 3.0f;
         }
-        setup_grade = std::min(10.0f, 7.5f + (bull_score - 8) * 0.45f);
     } else if (bear_score >= 8 && !sell_vetoed) {
         if (bear_ob && !bsl_swept && !disp) {
-            choice_logits[3] = 5.5f + (bear_score - 8) * 0.5f;
-            choice_logits[1] = 1.0f;
-            choice_logits[4] = -1.0f;
+            choice_logits[3] += 3.5f;
+            choice_logits[1] += 1.5f;
+            choice_logits[4] -= 2.5f;
         } else {
-            choice_logits[1] = 6.0f + (bear_score - 8) * 0.5f;
-            choice_logits[3] = 2.0f;
-            choice_logits[4] = -2.0f;
+            choice_logits[1] += 4.5f;
+            choice_logits[4] -= 3.0f;
         }
-        setup_grade = std::min(10.0f, 7.5f + (bear_score - 8) * 0.45f);
-    } else {
-        // HOLD dominates - patient trader waits for valid institutional setup
-        choice_logits[4] = 5.5f;
-        int partial = std::max(0, std::max(bull_score, bear_score));
-        setup_grade = std::min(5.8f, 3.0f + partial * 0.4f);
     }
 
     std::vector<std::string> choice_labels = {
@@ -405,11 +413,24 @@ LayaOutput LayaONNXEngine::InferPrimitives(const std::string& compressed_market_
         out.choice_distribution.push_back({choice_labels[i], choice_probs[i]});
     }
 
-    // Score Primitive
+    // Dynamic Setup Score calculation
+    float setup_grade = 3.5f;
     if (has_score_raw && onnx_score_raw > 0.0f) {
-        out.score_grade = std::min(10.0f, std::max(1.0f, 0.20f * onnx_score_raw + 0.80f * setup_grade));
+        setup_grade = onnx_score_raw;
     } else {
-        out.score_grade = setup_grade;
+        int partial = std::max(0, std::max(bull_score, bear_score));
+        setup_grade = 3.2f + partial * 0.50f;
+        if (disp) setup_grade += 1.2f;
+        if (vol_exp) setup_grade += 0.8f;
+        if (ssl_swept || bsl_swept) setup_grade += 1.0f;
+    }
+
+    if (bull_score >= 8 && !buy_vetoed) {
+        out.score_grade = std::min(10.0f, std::max(7.5f, setup_grade + 1.2f));
+    } else if (bear_score >= 8 && !sell_vetoed) {
+        out.score_grade = std::min(10.0f, std::max(7.5f, setup_grade + 1.2f));
+    } else {
+        out.score_grade = std::min(6.8f, std::max(1.5f, setup_grade));
     }
     out.score_top_grade = std::min(10, std::max(1, static_cast<int>(std::round(out.score_grade))));
 
